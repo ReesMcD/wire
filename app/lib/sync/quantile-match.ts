@@ -1,14 +1,16 @@
 /**
- * Quantile matching aligns FC raw scores to KTC’s empirical distribution per format lane (dynasty /
- * redraft), then max-rescales FC to 0–9999 within the lane. KTC rows store QM == max-scale norm.
+ * Quantile matching aligns each non-KTC source's raw scores to KTC's empirical distribution per
+ * format lane (dynasty / redraft), then max-rescales the result to 0–9999 within the lane. KTC rows
+ * store QM == max-scale norm (KTC is the reference, so it doesn't need re-mapping).
+ *
+ * Currently aligned to KTC: FantasyCalc (FC), Dynasty Daddy (DD/ADP Daddy).
  *
  * Edge cases:
- * - Empty intersection (only FC or only KTC in a lane): FC uses raw `value` in the lane max step;
- *   QM still lands on 0–9999. Old rows without `normalizedValueQm` until next full merge fall back to Max
- *   norms in the UI.
+ * - Empty intersection (only source X or only KTC in a lane): X uses raw `value` in the lane max
+ *   step; QM still lands on 0–9999. Old rows without `normalizedValueQm` fall back to Max norms in
+ *   the UI until the next full merge.
  * - Picks: included whenever both sources emit the same `pick:…` sleeperId.
- * - Dynasty Daddy / ADP Daddy: QM equals max-scale `normalizedValue` (no FC-style quantile map).
- * - Tiers in DB remain max-scale only; Rankings tier columns unchanged when Scale = Quantile (see UI copy).
+ * - Tiers in DB remain max-scale only; Rankings tier columns unchanged when Scale = Quantile.
  */
 import type { PlayerValue } from '@/lib/db/schema'
 import {
@@ -61,26 +63,28 @@ function mapFcRawToKtcQuantile(fcRaw: number, fcSorted: number[], ktcSorted: num
   return sortedQuantile(ktcSorted, p)
 }
 
+/** Map any source's raw `value` rows to KTC's empirical distribution within a lane, then
+ *  max-rescale to 0–9999. KTC's own QM stays equal to its `normalizedValue` (the reference). */
 function stampLaneQm(
   rows: PlayerValue[],
-  fcIds: Set<string>,
+  sourceIds: Set<string>,
   ktcIds: Set<string>,
   qmById: Map<string, number | null>,
 ): void {
-  const fcBySid = new Map<string, PlayerValue>()
+  const srcBySid = new Map<string, PlayerValue>()
   const ktcBySid = new Map<string, PlayerValue>()
   for (const v of rows) {
-    if (fcIds.has(v.sourceId)) fcBySid.set(v.sleeperId, v)
+    if (sourceIds.has(v.sourceId)) srcBySid.set(v.sleeperId, v)
     if (ktcIds.has(v.sourceId)) ktcBySid.set(v.sleeperId, v)
   }
 
-  const intersection = [...fcBySid.keys()].filter((id) => ktcBySid.has(id))
+  const intersection = [...srcBySid.keys()].filter((id) => ktcBySid.has(id))
 
-  let fcSorted: number[] = []
+  let srcSorted: number[] = []
   let ktcSorted: number[] = []
   if (intersection.length > 0) {
-    fcSorted = intersection
-      .map((id) => fcBySid.get(id)!.value)
+    srcSorted = intersection
+      .map((id) => srcBySid.get(id)!.value)
       .slice()
       .sort((a, b) => a - b)
     ktcSorted = intersection
@@ -91,13 +95,13 @@ function stampLaneQm(
 
   const mappedRawBySid = new Map<string, number>()
   for (const id of intersection) {
-    const fcRow = fcBySid.get(id)!
-    mappedRawBySid.set(id, mapFcRawToKtcQuantile(fcRow.value, fcSorted, ktcSorted))
+    const srcRow = srcBySid.get(id)!
+    mappedRawBySid.set(id, mapFcRawToKtcQuantile(srcRow.value, srcSorted, ktcSorted))
   }
 
   let maxMapped = 0
   for (const v of rows) {
-    if (!fcIds.has(v.sourceId)) continue
+    if (!sourceIds.has(v.sourceId)) continue
     const mr = mappedRawBySid.has(v.sleeperId)
       ? mappedRawBySid.get(v.sleeperId)!
       : v.value
@@ -105,7 +109,7 @@ function stampLaneQm(
   }
 
   for (const v of rows) {
-    if (fcIds.has(v.sourceId)) {
+    if (sourceIds.has(v.sourceId)) {
       const mr = mappedRawBySid.has(v.sleeperId)
         ? mappedRawBySid.get(v.sleeperId)!
         : v.value
@@ -117,27 +121,20 @@ function stampLaneQm(
   }
 }
 
-/** DD / ADP rows: quantile mode uses the same scale as Max (reference lane is FC↔KTC only). */
-function stampDdQm(rows: PlayerValue[], qmById: Map<string, number | null>): void {
-  for (const v of rows) {
-    if (DD_DYNASTY_IDS.has(v.sourceId) || DD_REDRAFT_IDS.has(v.sourceId)) {
-      qmById.set(v.id, v.normalizedValue)
-    }
-  }
-}
-
 /**
- * FC raw values are mapped onto KTC’s empirical distribution per format lane (quantile alignment),
- * then max-rescaled to 0–9999 within the lane. KTC rows use `normalizedValue` as QM (reference).
- * FC/KTC-only assets (no overlap): QM falls back to max-scale behavior using raw `value` in the
- * lane max step (same as intersection mapping using raw fallback above).
+ * Each non-KTC source's raw values are mapped onto KTC's empirical distribution per format lane
+ * (quantile alignment), then max-rescaled to 0–9999 within the lane. KTC rows use
+ * `normalizedValue` as QM (reference). Sources covered: FantasyCalc, Dynasty Daddy.
+ * Source-only assets without a KTC counterpart: QM falls back to max-scale behavior using raw
+ * `value` in the lane max step.
  */
 export function applyQuantileMatchedNorms(values: PlayerValue[]): PlayerValue[] {
   const qmById = new Map<string, number | null>()
 
   stampLaneQm(values, FC_DYNASTY_IDS, KTC_DYNASTY_IDS, qmById)
   stampLaneQm(values, FC_REDRAFT_IDS, KTC_REDRAFT_IDS, qmById)
-  stampDdQm(values, qmById)
+  stampLaneQm(values, DD_DYNASTY_IDS, KTC_DYNASTY_IDS, qmById)
+  stampLaneQm(values, DD_REDRAFT_IDS, KTC_REDRAFT_IDS, qmById)
 
   return values.map((v) => ({
     ...v,

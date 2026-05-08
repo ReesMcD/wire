@@ -13,17 +13,27 @@ import {
 } from '@tanstack/react-table'
 import { RefreshCw } from 'lucide-react'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { ConsensusFlag } from '@/components/league/consensus-flag'
+import { ConsensusIndicatorSettings } from '@/components/league/consensus-indicator-settings'
+import { computeMinAbsDeltaPercentileCutoff } from '@/lib/rankings/consensus-threshold'
 import { readPlayers, readValues } from '@/server/functions/read-data'
 import type { LeagueUser, Roster } from '@/lib/db/schema'
 import {
   aggregatePlayerValues,
   type AggregatedPlayer,
-  type NormMode,
 } from '@/lib/rankings/player-metrics'
+import { useUiSettings } from '@/lib/stores/ui-settings'
+import {
+  explainDelta,
+  explainHidePicks,
+  explainHideUnhighlighted,
+  explainNormMode,
+} from '@/lib/rankings/explain'
 import {
   LEAGUE_FETCHED_AT_STORAGE_KEY,
   LEAGUE_ID_STORAGE_KEY,
@@ -40,9 +50,6 @@ import {
   type RowLeagueKind,
 } from '@/lib/league/roster-index'
 import { getLeagueRosterSnapshot, type LeagueRosterSnapshot } from '@/server/functions/sync-sleeper'
-
-const NORM_MODE_STORAGE_KEY = 'rankings-norm-mode'
-const COLUMN_VISIBILITY_STORAGE_KEY = 'rankings-column-visibility'
 
 const ESTIMATE_ROW_HEIGHT_PX = 36
 
@@ -122,62 +129,38 @@ function RankingsPage() {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'dynAvgNorm', desc: true }])
   const [globalFilter, setGlobalFilter] = useState('')
   const [positionFilter, setPositionFilter] = useState<string | null>(null)
-  const [normMode, setNormMode] = useState<NormMode>('quantile')
+
+  const normMode = useUiSettings((s) => s.normMode)
+  const setNormMode = useUiSettings((s) => s.setNormMode)
+  const hidePicks = useUiSettings((s) => s.rankingsHidePicks)
+  const setHidePicks = useUiSettings((s) => s.setRankingsHidePicks)
+  const hideUnhighlighted = useUiSettings((s) => s.rankingsHideUnhighlighted)
+  const setHideUnhighlighted = useUiSettings((s) => s.setRankingsHideUnhighlighted)
+  const storedColumnVisibility = useUiSettings((s) => s.rankingsColumnVisibility)
+  const setStoredColumnVisibility = useUiSettings((s) => s.setRankingsColumnVisibility)
+
+  const columnVisibility = useMemo<VisibilityState>(
+    () => ({ dynasty: storedColumnVisibility.dynasty, redraft: storedColumnVisibility.redraft }),
+    [storedColumnVisibility],
+  )
+  const setColumnVisibility = (
+    updater: VisibilityState | ((old: VisibilityState) => VisibilityState),
+  ) => {
+    setStoredColumnVisibility((prev) => {
+      const old: VisibilityState = { dynasty: prev.dynasty, redraft: prev.redraft }
+      const next = typeof updater === 'function' ? updater(old) : updater
+      return {
+        dynasty: next.dynasty !== false,
+        redraft: next.redraft !== false,
+      }
+    })
+  }
 
   const [leagueInput, setLeagueInput] = useState('')
   /** Rosters selected for highlight (multi-select). */
   const [highlightTeamIds, setHighlightTeamIds] = useState<number[]>([])
   const [highlightAvailable, setHighlightAvailable] = useState(false)
-  const [hideUnhighlighted, setHideUnhighlighted] = useState(false)
-  const [hidePicks, setHidePicks] = useState(false)
   const [leagueBusy, setLeagueBusy] = useState(false)
-
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
-
-  useEffect(() => {
-    try {
-      const s = localStorage.getItem(NORM_MODE_STORAGE_KEY)
-      if (s === 'quantile' || s === 'max') setNormMode(s)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(NORM_MODE_STORAGE_KEY, normMode)
-    } catch {
-      /* ignore */
-    }
-  }, [normMode])
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY)
-      if (!raw) return
-      const j = JSON.parse(raw) as Record<string, unknown>
-      const next: VisibilityState = {}
-      if (typeof j.dynasty === 'boolean') next.dynasty = j.dynasty
-      if (typeof j.redraft === 'boolean') next.redraft = j.redraft
-      setColumnVisibility(next)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        COLUMN_VISIBILITY_STORAGE_KEY,
-        JSON.stringify({
-          dynasty: columnVisibility.dynasty !== false,
-          redraft: columnVisibility.redraft !== false,
-        }),
-      )
-    } catch {
-      /* ignore */
-    }
-  }, [columnVisibility])
 
   useEffect(() => {
     try {
@@ -245,6 +228,16 @@ function RankingsPage() {
   const aggregatedData = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
     [players, values, normMode],
+  )
+
+  const consensusPercentileSetting = useUiSettings((s) => s.consensusPercentile)
+  const consensusCutoffDyn = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregatedData, 'dynasty', consensusPercentileSetting),
+    [aggregatedData, consensusPercentileSetting],
+  )
+  const consensusCutoffRd = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregatedData, 'redraft', consensusPercentileSetting),
+    [aggregatedData, consensusPercentileSetting],
   )
 
   const tableRows = useMemo((): TablePlayer[] => {
@@ -346,6 +339,15 @@ function RankingsPage() {
       <span className="text-muted-foreground">{val !== null ? val.toLocaleString() : '-'}</span>
     )
 
+    const deltaHeader = (label: string, kind: 'fc' | 'dd' | 'avg') => () => (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-help underline decoration-dotted">{label}</span>
+        </TooltipTrigger>
+        <TooltipContent>{explainDelta(kind)}</TooltipContent>
+      </Tooltip>
+    )
+
     const deltaPtsCell = (val: number | null) => {
       if (val === null) return '-'
       const text = val > 0 ? `+${val.toLocaleString()}` : val.toLocaleString()
@@ -388,6 +390,22 @@ function RankingsPage() {
                 {row.original.position}
               </Badge>
             )}
+            <ConsensusFlag
+              lane="dynasty"
+              laneLabel="Dyn"
+              player={row.original}
+              minAbsDeltaPercentileCutoff={consensusCutoffDyn}
+              deltaFc={row.original.dynDeltaNormFcVsKtc}
+              deltaDd={row.original.dynDeltaNormDdVsKtc}
+            />
+            <ConsensusFlag
+              lane="redraft"
+              laneLabel="Rd"
+              player={row.original}
+              minAbsDeltaPercentileCutoff={consensusCutoffRd}
+              deltaFc={row.original.rdDeltaNormFcVsKtc}
+              deltaDd={row.original.rdDeltaNormDdVsKtc}
+            />
           </div>
         ),
       },
@@ -467,7 +485,7 @@ function RankingsPage() {
               },
               {
                 accessorKey: 'dynDeltaNormDdVsKtc',
-                header: 'Δ pts DD',
+                header: deltaHeader('Δ pts DD', 'dd'),
                 cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
               },
               {
@@ -506,7 +524,7 @@ function RankingsPage() {
               },
               {
                 accessorKey: 'dynDeltaNormFcVsKtc',
-                header: 'Δ pts',
+                header: deltaHeader('Δ pts', 'fc'),
                 cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
               },
               {
@@ -604,7 +622,7 @@ function RankingsPage() {
               },
               {
                 accessorKey: 'rdDeltaNormDdVsKtc',
-                header: 'Δ pts ADP',
+                header: deltaHeader('Δ pts ADP', 'dd'),
                 cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
               },
               {
@@ -643,7 +661,7 @@ function RankingsPage() {
               },
               {
                 accessorKey: 'rdDeltaNormFcVsKtc',
-                header: 'Δ pts',
+                header: deltaHeader('Δ pts', 'fc'),
                 cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
               },
               {
@@ -680,7 +698,7 @@ function RankingsPage() {
         ],
       },
     ]
-  }, [])
+  }, [consensusCutoffDyn, consensusCutoffRd])
 
   const table = useReactTable({
     data: filteredData,
@@ -724,17 +742,20 @@ function RankingsPage() {
         <h1 className="mb-2 text-3xl font-bold">Rankings</h1>
         <p className="text-muted-foreground">
           Dynasty and redraft values side by side (FantasyCalc, KTC, Dynasty Daddy / ADP Daddy). Normalized
-          to 9999 max per source (Max), or FC quantile-matched to KTC then scaled (Quantile); DD/ADP use the
-          same max scale for Quantile. Legacy rows stored as{' '}
+          to 9999 max per source (Max), or FC and DD quantile-matched to KTC then scaled (Quantile). Legacy
+          rows stored as{' '}
           <code className="rounded bg-muted px-1 py-0.5 text-xs">fantasycalc</code> /{' '}
           <code className="text-xs">ktc</code> count as dynasty. Headers group each format into KTC, Dynasty
           Daddy (or ADP Daddy in redraft), FantasyCalc (FC + Δ vs KTC), and Avg (tier Σ + ΔT Σ vs KTC). Δ pts
           = source norm − KTC norm where shown. ΔT = tier − KTC tier (lower tier # is better). Tier columns
-          use max-scale stamping; toggle affects norms and Δ pts only. Load a Sleeper league, then toggle any
+          use max-scale stamping; toggle affects norms and Δ pts only. In Quantile mode FC and DD norms are
+          quantile-aligned to KTC so cross-source Δ pts are comparable. Load a Sleeper league, then toggle any
           combination of teams and Available to highlight; use Hide unhighlighted to drop other players. Hide
           picks removes draft-pick rows from the table.
         </p>
       </div>
+
+      <ConsensusIndicatorSettings className="shrink-0 rounded-lg border border-border bg-muted/20 p-3" />
 
       <div className="flex shrink-0 flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
         <div className="flex flex-wrap items-end gap-2">
@@ -798,15 +819,20 @@ function RankingsPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                className="min-h-9"
-                variant={hideUnhighlighted ? 'default' : 'outline'}
-                onClick={() => setHideUnhighlighted((v) => !v)}
-              >
-                Hide unhighlighted
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="min-h-9"
+                    variant={hideUnhighlighted ? 'default' : 'outline'}
+                    onClick={() => setHideUnhighlighted(!hideUnhighlighted)}
+                  >
+                    Hide unhighlighted
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{explainHideUnhighlighted(hideUnhighlighted)}</TooltipContent>
+              </Tooltip>
               <span className="text-muted-foreground text-xs">
                 On: only rows matching your toggles stay (unless Hide picks is on).
               </span>
@@ -845,58 +871,87 @@ function RankingsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-muted-foreground text-sm">Scale:</span>
-          <Button
-            type="button"
-            variant={normMode === 'max' ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-10 sm:min-h-9"
-            onClick={() => setNormMode('max')}
-          >
-            Max
-          </Button>
-          <Button
-            type="button"
-            variant={normMode === 'quantile' ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-10 sm:min-h-9"
-            onClick={() => setNormMode('quantile')}
-          >
-            Quantile
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={normMode === 'max' ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 sm:min-h-9"
+                onClick={() => setNormMode('max')}
+              >
+                Max
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{explainNormMode('max')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={normMode === 'quantile' ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 sm:min-h-9"
+                onClick={() => setNormMode('quantile')}
+              >
+                Quantile
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{explainNormMode('quantile')}</TooltipContent>
+          </Tooltip>
         </div>
-        <Button
-          type="button"
-          variant={hidePicks ? 'default' : 'outline'}
-          size="sm"
-          className="min-h-10 sm:min-h-9"
-          onClick={() => setHidePicks((v) => !v)}
-        >
-          Hide picks
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={hidePicks ? 'default' : 'outline'}
+              size="sm"
+              className="min-h-10 sm:min-h-9"
+              onClick={() => setHidePicks(!hidePicks)}
+            >
+              Hide picks
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{explainHidePicks(hidePicks)}</TooltipContent>
+        </Tooltip>
         <div className="flex flex-wrap items-center gap-2 border-l border-border pl-3">
           <span className="text-muted-foreground text-sm">Columns:</span>
-          <Button
-            type="button"
-            variant={dynastyGroupVisible ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-10 sm:min-h-9"
-            onClick={() =>
-              setColumnVisibility((v) => ({ ...v, dynasty: v.dynasty === false ? true : false }))
-            }
-          >
-            Dynasty
-          </Button>
-          <Button
-            type="button"
-            variant={redraftGroupVisible ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-10 sm:min-h-9"
-            onClick={() =>
-              setColumnVisibility((v) => ({ ...v, redraft: v.redraft === false ? true : false }))
-            }
-          >
-            Redraft
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={dynastyGroupVisible ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 sm:min-h-9"
+                onClick={() =>
+                  setColumnVisibility((v) => ({ ...v, dynasty: v.dynasty === false ? true : false }))
+                }
+              >
+                Dynasty
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Show or hide all Dynasty columns (KTC + DD + FC + Avg). Toggle off to focus on Redraft.
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={redraftGroupVisible ? 'default' : 'outline'}
+                size="sm"
+                className="min-h-10 sm:min-h-9"
+                onClick={() =>
+                  setColumnVisibility((v) => ({ ...v, redraft: v.redraft === false ? true : false }))
+                }
+              >
+                Redraft
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Show or hide all Redraft columns (KTC + ADP + FC + Avg). Toggle off to focus on Dynasty.
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

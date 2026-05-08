@@ -14,6 +14,10 @@ export function fcLane(p: AggregatedPlayer, lane: MetricLane): number | null {
   return lane === 'dynasty' ? p.dynFcNorm : p.rdFcNorm
 }
 
+export function ddLane(p: AggregatedPlayer, lane: MetricLane): number | null {
+  return lane === 'dynasty' ? p.dynDdNorm : p.rdDdNorm
+}
+
 /**
  * Scalar fed into league-wide “Power” percentiles. Default: sum of avg norms in the pool
  * (full roster or value-optimal starters, depending on caller). Replace with weighted starters,

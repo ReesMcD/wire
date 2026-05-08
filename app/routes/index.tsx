@@ -51,12 +51,12 @@ function HomePage() {
               </CardHeader>
             </Card>
           </Link>
-          <Link to="/league-board" search={{ leagueId: undefined }}>
+          <Link to="/league">
             <Card className="hover:border-foreground/20 transition-colors cursor-pointer">
               <CardHeader>
-                <CardTitle>League board</CardTitle>
+                <CardTitle>League</CardTitle>
                 <CardDescription>
-                  Team strength, positions, and value-optimal starters for a Sleeper league.
+                  Overview, per-team breakdowns, and waiver wire for a Sleeper league.
                 </CardDescription>
               </CardHeader>
             </Card>

@@ -1,9 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/league/$leagueId')({
-  component: RouteComponent,
+  component: LeagueLayout,
 })
 
-function RouteComponent() {
-  return <div>Hello "/league/$leagueId"!</div>
+function LeagueLayout() {
+  return <Outlet />
 }
