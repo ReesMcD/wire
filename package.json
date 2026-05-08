@@ -1,0 +1,50 @@
+{
+  "name": "fantasy",
+  "version": "1.0.0",
+  "description": "Fantasy football data aggregator and analysis tool",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node .output/server/index.mjs",
+    "preview": "vite preview",
+    "sync": "tsx scripts/sync.ts",
+    "test": "tsx --test \"app/lib/sources/dynasty-daddy/*.test.ts\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.9",
+    "@tanstack/react-router": "^1.169.1",
+    "@tanstack/react-start": "^1.167.63",
+    "@tanstack/react-start-client": "^1.166.47",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.24",
+    "@tanstack/start-plugin-core": "^1.169.18",
+    "@tanstack/start-server-core": "^1.167.29",
+    "chromium-bidi": "^15.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0",
+    "next-themes": "^0.4.6",
+    "playwright": "^1.59.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "4",
+    "postcss": "^8.5.14",
+    "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vite": "7"
+  },
+  "packageManager": "pnpm@9.12.3+sha512.cce0f9de9c5a7c95bef944169cc5dfe8741abfb145078c0d508b868056848a87c81e626246cb60967cbd7fd29a6c062ef73ff840d96b3c86c40ac92cf4a813ee"
+}

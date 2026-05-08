@@ -1,0 +1,85 @@
+# Fantasy Aggregator - Project Rules
+
+## Project Context
+
+This is a fantasy football data aggregator built with TanStack Start. It syncs league data from Sleeper and player values from FantasyCalc (API) and KeepTradeCut (Playwright scraping).
+
+## Architecture Conventions
+
+### Player Identity
+- **Sleeper ID is the canonical player identifier** across the entire system.
+- Draft picks use a canonical format: `pick:{year}:{round}:{tier}` (e.g., `pick:2027:1:mid`).
+- Never generate custom UUIDs for players - always resolve to a Sleeper ID or use the pick canonical format.
+- The `PlayerMatcher` class in `app/lib/players/matcher.ts` handles all cross-source resolution.
+
+### Data Source Pattern
+- Each source lives in `app/lib/sources/{source-name}/` with `types.ts`, `client.ts` (or `scraper.ts`), and `provider.ts`.
+- Providers implement the `DataSourceProvider` interface from `app/lib/sources/types.ts`.
+- Server functions in `app/server/functions/` fetch and normalize data but do NOT persist — they return data to the client.
+
+### Data Persistence (TanStack DB + SQLite/OPFS)
+- Client-side persistence using `@tanstack/db` with `@tanstack/browser-db-sqlite-persistence`.
+- Collections defined in `app/lib/db/collections.ts` — `players`, `values`, `syncMetadata`, `unresolvedPlayers`.
+- Persistence layer in `app/lib/db/persistence.ts` — creates OPFS-backed SQLite database.
+- All data is stored in the browser (durable across sessions via OPFS).
+- No server-side data storage. The `data/` directory no longer exists.
+
+### Sync Pipeline
+- Server functions fetch raw data from external APIs/scrapers and normalize it.
+- Client receives normalized data, runs `resolveValues()` to match against Sleeper players.
+- Resolution includes normalization (0-9999 scale) and tiering (gap-threshold algorithm).
+- Client persists results into TanStack DB collections.
+- Auto-sync checks staleness (>24h) on app load per `localStorage` config.
+
+### Value Normalization & Tiering
+- Raw values from each source are normalized to a 0-9999 scale (max value = 9999).
+- Tiering uses a gap-threshold algorithm in `app/lib/sync/tiering.ts`.
+- Tiers are computed dynamically at sync time based on natural breaks in normalized values.
+- Both raw and normalized values are stored and displayed.
+
+### Server Functions
+- Use `createServerFn` from `@tanstack/react-start`.
+- Input validation via `.inputValidator(zodSchema)`.
+- Playwright imports must be dynamic (`await import('playwright')`) to avoid bundling issues.
+- Sync functions return data; persistence happens client-side.
+
+### Route Data Loading
+- Routes use `useLiveQuery` from `@tanstack/react-db` for reactive client-side data.
+- Collections must be initialized via `initCollections()` before use (async, OPFS setup).
+- Routes show a loading state until DB is ready, then render with live query data.
+- League data (rosters, users) is fetched on demand from Sleeper API via route loader.
+
+## Style Conventions
+
+### TypeScript
+- Strict mode enabled; no `any` unless absolutely necessary (persistence layer type casts are an exception).
+- Prefer `interface` over `type` for object shapes.
+- Use explicit return types on exported functions.
+- Zod schemas in `db/schema.ts`; infer types with `z.infer<>`.
+
+### React / UI
+- shadcn/ui components in `app/components/ui/` (New York variant, dark theme).
+- Use `@/` path alias for imports from `app/`.
+- Route components are the default export via `createFileRoute`.
+- Tailwind classes only - no inline styles or CSS modules.
+
+### File Naming
+- Routes: kebab-case matching URL segments (e.g., `league.$leagueId.tsx`).
+- Components: PascalCase files (e.g., `SyncPanel.tsx`).
+- Lib modules: camelCase files (e.g., `matcher.ts`, `normalizers.ts`).
+
+## Adding a New Data Source
+
+1. Create `app/lib/sources/{name}/types.ts` with raw API response types.
+2. Create `app/lib/sources/{name}/client.ts` (or `scraper.ts` for Playwright).
+3. Create `app/lib/sources/{name}/provider.ts` implementing `DataSourceProvider`.
+4. Create `app/server/functions/sync-{name}.ts` that fetches, normalizes, and returns data.
+5. Add a sync card and handler in `app/routes/sync.tsx` that persists to collections.
+6. Register in `app/lib/sources/registry.ts` (optional, for programmatic access).
+
+## Known Constraints
+
+- Playwright requires browser binaries installed (`npx playwright install chromium`).
+- KTC has no API; scraper selectors may break if their HTML changes.
+- OPFS persistence requires a modern browser with Web Worker and OPFS support.
+- TanStack DB collections require async initialization before first use.
