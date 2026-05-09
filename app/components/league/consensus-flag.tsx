@@ -1,0 +1,95 @@
+import { TrendingUp, TrendingDown } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
+import type { MetricLane } from '@/lib/rankings/league-board-power-input'
+import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
+import {
+  passesConsensusIndicator,
+  consensusNormSign,
+} from '@/lib/rankings/consensus-threshold'
+import { explainConsensusIconSummary } from '@/lib/rankings/explain'
+import { useUiSettings } from '@/lib/stores/ui-settings'
+
+interface ConsensusFlagProps {
+  lane: MetricLane
+  /** Precomputed from the full synced player pool for this lane (see computeMinAbsDeltaPercentileCutoff). */
+  minAbsDeltaPercentileCutoff: number | null
+  deltaFc: number | null | undefined
+  deltaDd: number | null | undefined
+  /** Required for rank mode; optional for percentile-only (still used for richer tooltip when present). */
+  player?: AggregatedPlayer | null
+  /** Optional lane tag rendered next to the icon (e.g. "Dyn", "Rd"). */
+  laneLabel?: string
+  className?: string
+}
+
+function formatDelta(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString()
+}
+
+/** Icon when FC and DD agree vs KTC, gated by persisted rank-gap or adaptive percentile rules. */
+export function ConsensusFlag({
+  lane,
+  minAbsDeltaPercentileCutoff,
+  deltaFc,
+  deltaDd,
+  player,
+  laneLabel,
+  className,
+}: ConsensusFlagProps) {
+  const mode = useUiSettings((s) => s.consensusThresholdMode)
+  const rankMinGap = useUiSettings((s) => s.consensusRankMinGap)
+  const percentile = useUiSettings((s) => s.consensusPercentile)
+
+  const dir = consensusNormSign(deltaFc, deltaDd)
+  const passes = passesConsensusIndicator(
+    player ?? null,
+    lane,
+    deltaFc,
+    deltaDd,
+    mode,
+    rankMinGap,
+    minAbsDeltaPercentileCutoff,
+  )
+  if (!dir || !passes) return null
+
+  const Icon = dir === 'higher' ? TrendingUp : TrendingDown
+  const color =
+    dir === 'higher'
+      ? 'text-emerald-600 dark:text-emerald-500'
+      : 'text-rose-600 dark:text-rose-400'
+  const directionWord = dir === 'higher' ? 'higher' : 'lower'
+  const subjectWord = dir === 'higher' ? 'undervaluing' : 'overvaluing'
+  const lanePrefix = laneLabel ? `${laneLabel}: ` : ''
+  const summary = explainConsensusIconSummary({
+    mode,
+    rankMinGap,
+    percentile,
+    percentileCutoff: minAbsDeltaPercentileCutoff,
+    laneLabel: laneLabel ?? (lane === 'dynasty' ? 'Dynasty' : 'Redraft'),
+  })
+  const tooltip = [
+    `${lanePrefix}FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`,
+    summary,
+  ].join(' ')
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={`${laneLabel ? `${laneLabel} ` : ''}FC and DD ${directionWord} than KTC`}
+          className={cn(
+            'inline-flex shrink-0 cursor-help items-center gap-0.5 align-middle leading-none',
+            color,
+            className,
+          )}
+        >
+          <Icon size={14} strokeWidth={2.25} />
+          {laneLabel ? <span className="text-[10px] font-semibold uppercase tracking-wide">{laneLabel}</span> : null}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}

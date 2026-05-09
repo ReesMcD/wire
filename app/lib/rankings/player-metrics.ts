@@ -71,13 +71,18 @@ export interface AggregatedPlayer {
   dynFcValue: number | null
   dynFcNorm: number | null
   dynFcRank: number | null
+  dynFcPosRank: number | null
   dynKtcValue: number | null
   dynKtcNorm: number | null
   dynKtcRank: number | null
+  dynKtcPosRank: number | null
   dynDdValue: number | null
   dynDdNorm: number | null
   dynDdRank: number | null
+  dynDdPosRank: number | null
   dynAvgNorm: number | null
+  dynAvgRank: number | null
+  dynAvgPosRank: number | null
   rdTierAvg: number | null
   rdTierFc: number | null
   rdTierKtc: number | null
@@ -85,23 +90,122 @@ export interface AggregatedPlayer {
   rdFcValue: number | null
   rdFcNorm: number | null
   rdFcRank: number | null
+  rdFcPosRank: number | null
   rdKtcValue: number | null
   rdKtcNorm: number | null
   rdKtcRank: number | null
+  rdKtcPosRank: number | null
   rdDdValue: number | null
   rdDdNorm: number | null
   rdDdRank: number | null
+  rdDdPosRank: number | null
   rdAvgNorm: number | null
+  rdAvgRank: number | null
+  rdAvgPosRank: number | null
   dynDeltaNormFcVsKtc: number | null
-  dynDeltaTierFcVsKtc: number | null
-  dynDeltaTierAvgVsKtc: number | null
   dynDeltaNormDdVsKtc: number | null
-  dynDeltaTierDdVsKtc: number | null
   rdDeltaNormFcVsKtc: number | null
-  rdDeltaTierFcVsKtc: number | null
-  rdDeltaTierAvgVsKtc: number | null
   rdDeltaNormDdVsKtc: number | null
-  rdDeltaTierDdVsKtc: number | null
+}
+
+type PosRankField = keyof Pick<
+  AggregatedPlayer,
+  | 'dynKtcPosRank'
+  | 'dynFcPosRank'
+  | 'dynDdPosRank'
+  | 'rdKtcPosRank'
+  | 'rdFcPosRank'
+  | 'rdDdPosRank'
+  | 'dynAvgPosRank'
+  | 'rdAvgPosRank'
+>
+
+type OverallRankField = keyof Pick<AggregatedPlayer, 'dynAvgRank' | 'rdAvgRank'>
+
+type ValueField = keyof Pick<
+  AggregatedPlayer,
+  | 'dynKtcValue'
+  | 'dynFcValue'
+  | 'dynDdValue'
+  | 'rdKtcValue'
+  | 'rdFcValue'
+  | 'rdDdValue'
+  | 'dynAvgNorm'
+  | 'rdAvgNorm'
+>
+
+/**
+ * Assigns 1..N positional rank to non-pick rows by `valueField` desc within `position`.
+ * Picks (PICK / pick:* sleeperId) are excluded; rows missing `valueField` keep `null`.
+ */
+function stampPositionalRank(
+  rows: AggregatedPlayer[],
+  valueField: ValueField,
+  rankField: PosRankField,
+): void {
+  const byPos = new Map<string, AggregatedPlayer[]>()
+  for (const r of rows) {
+    if (r.sleeperId.startsWith('pick:')) continue
+    if (r.position === 'PICK') continue
+    if (!r.position) continue
+    if (r[valueField] == null) continue
+    const list = byPos.get(r.position) ?? []
+    list.push(r)
+    byPos.set(r.position, list)
+  }
+  for (const list of byPos.values()) {
+    list.sort((a, b) => {
+      const av = a[valueField] ?? Number.NEGATIVE_INFINITY
+      const bv = b[valueField] ?? Number.NEGATIVE_INFINITY
+      if (bv !== av) return bv - av
+      return a.name.localeCompare(b.name)
+    })
+    list.forEach((r, i) => {
+      r[rankField] = i + 1
+    })
+  }
+}
+
+/**
+ * Assigns 1..N overall rank to non-pick rows by `valueField` desc.
+ */
+function stampOverallRank(
+  rows: AggregatedPlayer[],
+  valueField: ValueField,
+  rankField: OverallRankField,
+): void {
+  const list = rows.filter(
+    (r) => !r.sleeperId.startsWith('pick:') && r.position !== 'PICK' && r[valueField] != null,
+  )
+  list.sort((a, b) => {
+    const av = a[valueField] ?? Number.NEGATIVE_INFINITY
+    const bv = b[valueField] ?? Number.NEGATIVE_INFINITY
+    if (bv !== av) return bv - av
+    return a.name.localeCompare(b.name)
+  })
+  list.forEach((r, i) => {
+    r[rankField] = i + 1
+  })
+}
+
+/** Among draft picks only, rank by `valueField` desc → 1..N (e.g. PICK1 = best pick by that metric). */
+function stampPickPoolRank(
+  rows: AggregatedPlayer[],
+  valueField: ValueField,
+  rankField: PosRankField,
+): void {
+  const picks = rows.filter(
+    (r) => (r.sleeperId.startsWith('pick:') || r.position === 'PICK') && r[valueField] != null,
+  )
+  picks.sort((a, b) => {
+    const av = a[valueField] ?? Number.NEGATIVE_INFINITY
+    const bv = b[valueField] ?? Number.NEGATIVE_INFINITY
+    if (bv !== av) return bv - av
+    return a.sleeperId.localeCompare(b.sleeperId)
+  })
+  picks.forEach((r, i) => {
+    r[rankField] = i + 1
+  })
 }
 
 export function aggregatePlayerValues(
@@ -155,13 +259,18 @@ export function aggregatePlayerValues(
       dynFcValue: dFc?.value ?? null,
       dynFcNorm: pickNorm(dFc, normMode),
       dynFcRank: dFc?.overallRank ?? null,
+      dynFcPosRank: null,
       dynKtcValue: dKtc?.value ?? null,
       dynKtcNorm: pickNorm(dKtc, normMode),
       dynKtcRank: dKtc?.overallRank ?? null,
+      dynKtcPosRank: null,
       dynDdValue: dDd?.value ?? null,
       dynDdNorm: pickNorm(dDd, normMode),
       dynDdRank: dDd?.overallRank ?? null,
+      dynDdPosRank: null,
       dynAvgNorm: avgNormMulti(normMode, [dFc, dKtc, dDd]),
+      dynAvgRank: null,
+      dynAvgPosRank: null,
       rdTierAvg: rdTierAvgVal,
       rdTierFc: rFc?.tierFc ?? null,
       rdTierKtc: rKtc?.tierKtc ?? null,
@@ -169,31 +278,44 @@ export function aggregatePlayerValues(
       rdFcValue: rFc?.value ?? null,
       rdFcNorm: pickNorm(rFc, normMode),
       rdFcRank: rFc?.overallRank ?? null,
+      rdFcPosRank: null,
       rdKtcValue: rKtc?.value ?? null,
       rdKtcNorm: pickNorm(rKtc, normMode),
       rdKtcRank: rKtc?.overallRank ?? null,
+      rdKtcPosRank: null,
       rdDdValue: rDd?.value ?? null,
       rdDdNorm: pickNorm(rDd, normMode),
       rdDdRank: rDd?.overallRank ?? null,
+      rdDdPosRank: null,
       rdAvgNorm: avgNormMulti(normMode, [rFc, rKtc, rDd]),
+      rdAvgRank: null,
+      rdAvgPosRank: null,
       dynDeltaNormFcVsKtc: dFn != null && dKn != null ? dFn - dKn : null,
-      dynDeltaTierFcVsKtc:
-        dFc?.tierFc != null && dKtc?.tierKtc != null ? dFc.tierFc - dKtc.tierKtc : null,
-      dynDeltaTierAvgVsKtc:
-        dynTierAvgVal != null && dKtc?.tierKtc != null ? dynTierAvgVal - dKtc.tierKtc : null,
       dynDeltaNormDdVsKtc: dDn != null && dKn != null ? dDn - dKn : null,
-      dynDeltaTierDdVsKtc:
-        dDd?.tierDd != null && dKtc?.tierKtc != null ? dDd.tierDd - dKtc.tierKtc : null,
       rdDeltaNormFcVsKtc: rFn != null && rKn != null ? rFn - rKn : null,
-      rdDeltaTierFcVsKtc:
-        rFc?.tierFc != null && rKtc?.tierKtc != null ? rFc.tierFc - rKtc.tierKtc : null,
-      rdDeltaTierAvgVsKtc:
-        rdTierAvgVal != null && rKtc?.tierKtc != null ? rdTierAvgVal - rKtc.tierKtc : null,
       rdDeltaNormDdVsKtc: rDn != null && rKn != null ? rDn - rKn : null,
-      rdDeltaTierDdVsKtc:
-        rDd?.tierDd != null && rKtc?.tierKtc != null ? rDd.tierDd - rKtc.tierKtc : null,
     })
   }
+
+  stampPositionalRank(results, 'dynKtcValue', 'dynKtcPosRank')
+  stampPositionalRank(results, 'dynFcValue', 'dynFcPosRank')
+  stampPositionalRank(results, 'dynDdValue', 'dynDdPosRank')
+  stampPositionalRank(results, 'rdKtcValue', 'rdKtcPosRank')
+  stampPositionalRank(results, 'rdFcValue', 'rdFcPosRank')
+  stampPositionalRank(results, 'rdDdValue', 'rdDdPosRank')
+  stampPositionalRank(results, 'dynAvgNorm', 'dynAvgPosRank')
+  stampPositionalRank(results, 'rdAvgNorm', 'rdAvgPosRank')
+  stampOverallRank(results, 'dynAvgNorm', 'dynAvgRank')
+  stampOverallRank(results, 'rdAvgNorm', 'rdAvgRank')
+
+  stampPickPoolRank(results, 'dynKtcValue', 'dynKtcPosRank')
+  stampPickPoolRank(results, 'dynFcValue', 'dynFcPosRank')
+  stampPickPoolRank(results, 'dynDdValue', 'dynDdPosRank')
+  stampPickPoolRank(results, 'rdKtcValue', 'rdKtcPosRank')
+  stampPickPoolRank(results, 'rdFcValue', 'rdFcPosRank')
+  stampPickPoolRank(results, 'rdDdValue', 'rdDdPosRank')
+  stampPickPoolRank(results, 'dynAvgNorm', 'dynAvgPosRank')
+  stampPickPoolRank(results, 'rdAvgNorm', 'rdAvgPosRank')
 
   return results
 }

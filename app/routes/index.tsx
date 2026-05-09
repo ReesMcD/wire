@@ -16,7 +16,7 @@ function HomePage() {
   const hasData = valueCount > 0 || Object.keys(metadata).length > 0
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
       <div>
         <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
         <p className="text-muted-foreground">
@@ -51,12 +51,12 @@ function HomePage() {
               </CardHeader>
             </Card>
           </Link>
-          <Link to="/league-board" search={{ leagueId: undefined }}>
+          <Link to="/league">
             <Card className="hover:border-foreground/20 transition-colors cursor-pointer">
               <CardHeader>
-                <CardTitle>League board</CardTitle>
+                <CardTitle>League</CardTitle>
                 <CardDescription>
-                  Team strength, positions, and value-optimal starters for a Sleeper league.
+                  Overview, per-team breakdowns, and waiver wire for a Sleeper league.
                 </CardDescription>
               </CardHeader>
             </Card>

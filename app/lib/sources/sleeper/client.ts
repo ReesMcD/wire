@@ -3,6 +3,7 @@ import type {
   SleeperApiPlayer,
   SleeperApiRoster,
   SleeperApiUser,
+  SleeperTradedPick,
 } from './types'
 
 const BASE_URL = 'https://api.sleeper.app/v1'
@@ -29,6 +30,10 @@ export async function fetchLeagueUsers(leagueId: string): Promise<SleeperApiUser
 
 export async function fetchLeagueRosters(leagueId: string): Promise<SleeperApiRoster[]> {
   return fetchJson<SleeperApiRoster[]>(`${BASE_URL}/league/${leagueId}/rosters`)
+}
+
+export async function fetchLeagueTradedPicks(leagueId: string): Promise<SleeperTradedPick[]> {
+  return fetchJson<SleeperTradedPick[]>(`${BASE_URL}/league/${leagueId}/traded_picks`)
 }
 
 export async function fetchNflState(): Promise<{ season: string; week: number }> {

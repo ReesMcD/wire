@@ -139,7 +139,7 @@ function SyncPage() {
   const getSyncStatus = (id: string) => metadata[id]
 
   return (
-    <div className="container mx-auto p-6 space-y-6 max-w-2xl">
+    <div className="container mx-auto max-w-2xl min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
       <div>
         <h1 className="text-3xl font-bold mb-2">Sync Data</h1>
         <p className="text-muted-foreground">

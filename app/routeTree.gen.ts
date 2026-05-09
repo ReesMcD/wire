@@ -10,14 +10,24 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SyncRouteImport } from './routes/sync'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RankingsRouteImport } from './routes/rankings'
-import { Route as LeagueBoardRouteImport } from './routes/league-board'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LeagueIndexRouteImport } from './routes/league.index'
+import { Route as PlayerSleeperIdRouteImport } from './routes/player.$sleeperId'
 import { Route as LeagueLeagueIdRouteImport } from './routes/league.$leagueId'
+import { Route as LeagueLeagueIdIndexRouteImport } from './routes/league.$leagueId.index'
+import { Route as LeagueLeagueIdWaiverRouteImport } from './routes/league.$leagueId.waiver'
+import { Route as LeagueLeagueIdTeamRosterIdRouteImport } from './routes/league.$leagueId.team.$rosterId'
 
 const SyncRoute = SyncRouteImport.update({
   id: '/sync',
   path: '/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RankingsRoute = RankingsRouteImport.update({
@@ -25,14 +35,19 @@ const RankingsRoute = RankingsRouteImport.update({
   path: '/rankings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LeagueBoardRoute = LeagueBoardRouteImport.update({
-  id: '/league-board',
-  path: '/league-board',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LeagueIndexRoute = LeagueIndexRouteImport.update({
+  id: '/league/',
+  path: '/league/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlayerSleeperIdRoute = PlayerSleeperIdRouteImport.update({
+  id: '/player/$sleeperId',
+  path: '/player/$sleeperId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LeagueLeagueIdRoute = LeagueLeagueIdRouteImport.update({
@@ -40,49 +55,105 @@ const LeagueLeagueIdRoute = LeagueLeagueIdRouteImport.update({
   path: '/league/$leagueId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LeagueLeagueIdIndexRoute = LeagueLeagueIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LeagueLeagueIdRoute,
+} as any)
+const LeagueLeagueIdWaiverRoute = LeagueLeagueIdWaiverRouteImport.update({
+  id: '/waiver',
+  path: '/waiver',
+  getParentRoute: () => LeagueLeagueIdRoute,
+} as any)
+const LeagueLeagueIdTeamRosterIdRoute =
+  LeagueLeagueIdTeamRosterIdRouteImport.update({
+    id: '/team/$rosterId',
+    path: '/team/$rosterId',
+    getParentRoute: () => LeagueLeagueIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/league-board': typeof LeagueBoardRoute
   '/rankings': typeof RankingsRoute
+  '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
-  '/league/$leagueId': typeof LeagueLeagueIdRoute
+  '/league/$leagueId': typeof LeagueLeagueIdRouteWithChildren
+  '/player/$sleeperId': typeof PlayerSleeperIdRoute
+  '/league/': typeof LeagueIndexRoute
+  '/league/$leagueId/waiver': typeof LeagueLeagueIdWaiverRoute
+  '/league/$leagueId/': typeof LeagueLeagueIdIndexRoute
+  '/league/$leagueId/team/$rosterId': typeof LeagueLeagueIdTeamRosterIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/league-board': typeof LeagueBoardRoute
   '/rankings': typeof RankingsRoute
+  '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
-  '/league/$leagueId': typeof LeagueLeagueIdRoute
+  '/player/$sleeperId': typeof PlayerSleeperIdRoute
+  '/league': typeof LeagueIndexRoute
+  '/league/$leagueId/waiver': typeof LeagueLeagueIdWaiverRoute
+  '/league/$leagueId': typeof LeagueLeagueIdIndexRoute
+  '/league/$leagueId/team/$rosterId': typeof LeagueLeagueIdTeamRosterIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/league-board': typeof LeagueBoardRoute
   '/rankings': typeof RankingsRoute
+  '/settings': typeof SettingsRoute
   '/sync': typeof SyncRoute
-  '/league/$leagueId': typeof LeagueLeagueIdRoute
+  '/league/$leagueId': typeof LeagueLeagueIdRouteWithChildren
+  '/player/$sleeperId': typeof PlayerSleeperIdRoute
+  '/league/': typeof LeagueIndexRoute
+  '/league/$leagueId/waiver': typeof LeagueLeagueIdWaiverRoute
+  '/league/$leagueId/': typeof LeagueLeagueIdIndexRoute
+  '/league/$leagueId/team/$rosterId': typeof LeagueLeagueIdTeamRosterIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/league-board' | '/rankings' | '/sync' | '/league/$leagueId'
+  fullPaths:
+    | '/'
+    | '/rankings'
+    | '/settings'
+    | '/sync'
+    | '/league/$leagueId'
+    | '/player/$sleeperId'
+    | '/league/'
+    | '/league/$leagueId/waiver'
+    | '/league/$leagueId/'
+    | '/league/$leagueId/team/$rosterId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/league-board' | '/rankings' | '/sync' | '/league/$leagueId'
+  to:
+    | '/'
+    | '/rankings'
+    | '/settings'
+    | '/sync'
+    | '/player/$sleeperId'
+    | '/league'
+    | '/league/$leagueId/waiver'
+    | '/league/$leagueId'
+    | '/league/$leagueId/team/$rosterId'
   id:
     | '__root__'
     | '/'
-    | '/league-board'
     | '/rankings'
+    | '/settings'
     | '/sync'
     | '/league/$leagueId'
+    | '/player/$sleeperId'
+    | '/league/'
+    | '/league/$leagueId/waiver'
+    | '/league/$leagueId/'
+    | '/league/$leagueId/team/$rosterId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  LeagueBoardRoute: typeof LeagueBoardRoute
   RankingsRoute: typeof RankingsRoute
+  SettingsRoute: typeof SettingsRoute
   SyncRoute: typeof SyncRoute
-  LeagueLeagueIdRoute: typeof LeagueLeagueIdRoute
+  LeagueLeagueIdRoute: typeof LeagueLeagueIdRouteWithChildren
+  PlayerSleeperIdRoute: typeof PlayerSleeperIdRoute
+  LeagueIndexRoute: typeof LeagueIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -94,18 +165,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SyncRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rankings': {
       id: '/rankings'
       path: '/rankings'
       fullPath: '/rankings'
       preLoaderRoute: typeof RankingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/league-board': {
-      id: '/league-board'
-      path: '/league-board'
-      fullPath: '/league-board'
-      preLoaderRoute: typeof LeagueBoardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -115,6 +186,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/league/': {
+      id: '/league/'
+      path: '/league'
+      fullPath: '/league/'
+      preLoaderRoute: typeof LeagueIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/player/$sleeperId': {
+      id: '/player/$sleeperId'
+      path: '/player/$sleeperId'
+      fullPath: '/player/$sleeperId'
+      preLoaderRoute: typeof PlayerSleeperIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/league/$leagueId': {
       id: '/league/$leagueId'
       path: '/league/$leagueId'
@@ -122,15 +207,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeagueLeagueIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/league/$leagueId/': {
+      id: '/league/$leagueId/'
+      path: '/'
+      fullPath: '/league/$leagueId/'
+      preLoaderRoute: typeof LeagueLeagueIdIndexRouteImport
+      parentRoute: typeof LeagueLeagueIdRoute
+    }
+    '/league/$leagueId/waiver': {
+      id: '/league/$leagueId/waiver'
+      path: '/waiver'
+      fullPath: '/league/$leagueId/waiver'
+      preLoaderRoute: typeof LeagueLeagueIdWaiverRouteImport
+      parentRoute: typeof LeagueLeagueIdRoute
+    }
+    '/league/$leagueId/team/$rosterId': {
+      id: '/league/$leagueId/team/$rosterId'
+      path: '/team/$rosterId'
+      fullPath: '/league/$leagueId/team/$rosterId'
+      preLoaderRoute: typeof LeagueLeagueIdTeamRosterIdRouteImport
+      parentRoute: typeof LeagueLeagueIdRoute
+    }
   }
 }
 
+interface LeagueLeagueIdRouteChildren {
+  LeagueLeagueIdWaiverRoute: typeof LeagueLeagueIdWaiverRoute
+  LeagueLeagueIdIndexRoute: typeof LeagueLeagueIdIndexRoute
+  LeagueLeagueIdTeamRosterIdRoute: typeof LeagueLeagueIdTeamRosterIdRoute
+}
+
+const LeagueLeagueIdRouteChildren: LeagueLeagueIdRouteChildren = {
+  LeagueLeagueIdWaiverRoute: LeagueLeagueIdWaiverRoute,
+  LeagueLeagueIdIndexRoute: LeagueLeagueIdIndexRoute,
+  LeagueLeagueIdTeamRosterIdRoute: LeagueLeagueIdTeamRosterIdRoute,
+}
+
+const LeagueLeagueIdRouteWithChildren = LeagueLeagueIdRoute._addFileChildren(
+  LeagueLeagueIdRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  LeagueBoardRoute: LeagueBoardRoute,
   RankingsRoute: RankingsRoute,
+  SettingsRoute: SettingsRoute,
   SyncRoute: SyncRoute,
-  LeagueLeagueIdRoute: LeagueLeagueIdRoute,
+  LeagueLeagueIdRoute: LeagueLeagueIdRouteWithChildren,
+  PlayerSleeperIdRoute: PlayerSleeperIdRoute,
+  LeagueIndexRoute: LeagueIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -76,14 +76,26 @@
 /* Rankings spreadsheet — semantic tokens only */
 .spreadsheet-scroll {
   -webkit-overflow-scrolling: touch;
+  isolation: isolate;
 }
 
+/* `border-collapse: collapse` breaks `position: sticky` on `<th>` in Chromium — use separate + 0 spacing */
 .spreadsheet-table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .spreadsheet-table :is(th, td) {
-  @apply border border-border px-2 py-1.5 align-middle text-xs;
+  /* Keep each row one line; overflow scrolls on .spreadsheet-scroll — no wrap/truncate in cells */
+  @apply whitespace-nowrap border-0 border-r border-b border-border px-2 py-1.5 align-middle text-xs;
+}
+
+.spreadsheet-table thead tr:first-child > th {
+  @apply border-t border-border;
+}
+
+.spreadsheet-table :is(th:first-child, td:first-child) {
+  @apply border-l border-border;
 }
 
 .spreadsheet-table :is(th, td):not(:first-child) {
@@ -91,7 +103,8 @@
 }
 
 .spreadsheet-table thead th {
-  @apply whitespace-nowrap bg-muted/95 text-muted-foreground backdrop-blur-sm;
+  /* Solid background: backdrop-filter on sticky thead causes scroll jank / “ticking” in Chrome */
+  @apply bg-muted text-muted-foreground;
 }
 
 .spreadsheet-table tbody tr {

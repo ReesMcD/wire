@@ -4,17 +4,20 @@ import {
   fetchAllPlayers,
   fetchLeague,
   fetchLeagueRosters,
+  fetchLeagueTradedPicks,
   fetchLeagueUsers,
 } from '@/lib/sources/sleeper/client'
+import { mergeTradedPickIdsIntoRosterPlayerIds } from '@/lib/sources/sleeper/merge-roster-picks'
 import { writePlayers, updateSyncMetadata } from './write-data'
-import type { SleeperApiPlayer } from '@/lib/sources/sleeper/types'
+import type { SleeperApiPlayer, SleeperTradedPick } from '@/lib/sources/sleeper/types'
 import type { League, LeagueUser, Roster, SleeperPlayer } from '@/lib/db/schema'
 
 async function normalizeLeagueBundle(leagueId: string) {
-  const [league, users, rosters] = await Promise.all([
+  const [league, users, rosters, tradedPicks] = await Promise.all([
     fetchLeague(leagueId),
     fetchLeagueUsers(leagueId),
     fetchLeagueRosters(leagueId),
+    fetchLeagueTradedPicks(leagueId).catch((): SleeperTradedPick[] => []),
   ])
 
   const normalizedLeague: League = {
@@ -42,7 +45,7 @@ async function normalizeLeagueBundle(leagueId: string) {
     rosterId: r.roster_id,
     leagueId,
     ownerId: r.owner_id,
-    playerIds: r.players ?? [],
+    playerIds: mergeTradedPickIdsIntoRosterPlayerIds(r.roster_id, r.players ?? [], tradedPicks),
     starters: r.starters ?? [],
     wins: r.settings.wins,
     losses: r.settings.losses,

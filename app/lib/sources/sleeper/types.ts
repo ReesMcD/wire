@@ -49,3 +49,12 @@ export interface SleeperApiRoster {
     [key: string]: unknown
   }
 }
+
+/** Future / traded draft picks; `owner_id` is current roster id holding the pick. */
+export interface SleeperTradedPick {
+  season: string
+  round: number
+  roster_id: number
+  owner_id: number
+  previous_owner_id?: number
+}
