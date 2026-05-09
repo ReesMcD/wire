@@ -16,5 +16,5 @@
     },
     "rootDir": "."
   },
-  "include": ["app/**/*", "scripts/**/*", "vite.config.ts"]
+  "include": ["app/**/*", "scripts/**/*", "tasks/**/*", "vite.config.ts"]
 }
