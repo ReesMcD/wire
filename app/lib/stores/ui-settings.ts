@@ -4,6 +4,7 @@ import {
   DEFAULT_DEPTH_WEIGHTS,
   type DepthTier,
   type MetricLane,
+  type NormLaneSource,
 } from '@/lib/rankings/league-board-power-input'
 import type { NormMode } from '@/lib/rankings/player-metrics'
 import type { ConsensusThresholdMode } from '@/lib/rankings/consensus-threshold'
@@ -76,6 +77,8 @@ interface UiSettingsState {
   playerFiltersCollapsed: boolean
   /** Default Sleeper league id for rankings highlights (synced with shared league storage). */
   rankingsDefaultLeagueId: string
+  /** Which norm source the league overview roster list uses for its per-slot number. */
+  leagueOverviewDisplayNormSource: NormLaneSource
 
   setMetricLane: (v: MetricLane) => void
   setNormMode: (v: NormMode) => void
@@ -102,6 +105,7 @@ interface UiSettingsState {
   setTeamFiltersCollapsed: (v: boolean) => void
   setPlayerFiltersCollapsed: (v: boolean) => void
   setRankingsDefaultLeagueId: (v: string) => void
+  setLeagueOverviewDisplayNormSource: (v: NormLaneSource) => void
   resetAll: () => void
 }
 
@@ -130,6 +134,7 @@ const DEFAULTS: Omit<
   | 'setTeamFiltersCollapsed'
   | 'setPlayerFiltersCollapsed'
   | 'setRankingsDefaultLeagueId'
+  | 'setLeagueOverviewDisplayNormSource'
   | 'resetAll'
 > = {
   metricLane: 'dynasty',
@@ -155,6 +160,7 @@ const DEFAULTS: Omit<
   teamFiltersCollapsed: false,
   playerFiltersCollapsed: false,
   rankingsDefaultLeagueId: '',
+  leagueOverviewDisplayNormSource: 'avg',
 }
 
 const LEGACY_KEYS = {
@@ -317,6 +323,11 @@ function migratePersistedToV3(raw: unknown): Partial<UiSettingsState> {
   if (typeof s.playerFiltersCollapsed === 'boolean') out.playerFiltersCollapsed = s.playerFiltersCollapsed
   if (typeof s.rankingsDefaultLeagueId === 'string') out.rankingsDefaultLeagueId = s.rankingsDefaultLeagueId
 
+  const disp = s.leagueOverviewDisplayNormSource
+  if (disp === 'avg' || disp === 'ktc' || disp === 'fc' || disp === 'dd') {
+    out.leagueOverviewDisplayNormSource = disp
+  }
+
   return out
 }
 
@@ -363,11 +374,12 @@ export const useUiSettings = create<UiSettingsState>()(
       setTeamFiltersCollapsed: (v) => set({ teamFiltersCollapsed: v }),
       setPlayerFiltersCollapsed: (v) => set({ playerFiltersCollapsed: v }),
       setRankingsDefaultLeagueId: (v) => set({ rankingsDefaultLeagueId: v.trim() }),
+      setLeagueOverviewDisplayNormSource: (v) => set({ leagueOverviewDisplayNormSource: v }),
       resetAll: () => set({ ...DEFAULTS }),
     }),
     {
       name: 'fantasy-ui-settings',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted, fromVersion) => {
@@ -416,6 +428,12 @@ export const useUiSettings = create<UiSettingsState>()(
               : 0
         }
 
+        if (v < 6) {
+          const d = merged.leagueOverviewDisplayNormSource
+          merged.leagueOverviewDisplayNormSource =
+            d === 'avg' || d === 'ktc' || d === 'fc' || d === 'dd' ? d : 'avg'
+        }
+
         const partial = migratePersistedToV3(merged)
         return { ...DEFAULTS, ...partial } as UiSettingsState
       },
@@ -443,6 +461,7 @@ export const useUiSettings = create<UiSettingsState>()(
         teamFiltersCollapsed: state.teamFiltersCollapsed,
         playerFiltersCollapsed: state.playerFiltersCollapsed,
         rankingsDefaultLeagueId: state.rankingsDefaultLeagueId,
+        leagueOverviewDisplayNormSource: state.leagueOverviewDisplayNormSource,
       }),
       merge: (persistedState, currentState) => {
         const persisted = migratePersistedToV3(persistedState)

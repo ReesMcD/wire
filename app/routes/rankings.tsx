@@ -38,6 +38,7 @@ import {
 } from '@/lib/league/roster-index'
 import { getLeagueRosterSnapshot, type LeagueRosterSnapshot } from '@/server/functions/sync-sleeper'
 import { useUiSettings } from '@/lib/stores/ui-settings'
+import { wrapNormWithLaneTooltip, type TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
 
 const COLUMN_VISIBILITY_STORAGE_KEY = 'rankings-column-visibility'
 
@@ -115,6 +116,7 @@ function RankingsPage() {
   const { players, values, leagueSnapshot } = Route.useLoaderData()
   const spreadsheetScrollRef = useRef<HTMLDivElement>(null)
 
+  const metricLane = useUiSettings((s) => s.metricLane) as TableMetricLane
   const normMode = useUiSettings((s) => s.normMode)
   const setNormMode = useUiSettings((s) => s.setNormMode)
   const hidePickRows = useUiSettings((s) => s.hidePickRows)
@@ -326,7 +328,13 @@ function RankingsPage() {
     )
 
   const columns = useMemo((): ColumnDef<TablePlayer>[] => {
-    const normCell = (val: number | null) => (val !== null ? val.toLocaleString() : '-')
+    const normCell = (val: number | null, player: TablePlayer, columnLane: TableMetricLane) =>
+      wrapNormWithLaneTooltip(
+        metricLane,
+        columnLane,
+        player,
+        <span className="tabular-nums">{val !== null ? val.toLocaleString() : '-'}</span>,
+      )
     const rawCell = (val: number | null) => (
       <span className="text-muted-foreground">{val !== null ? val.toLocaleString() : '-'}</span>
     )
@@ -448,7 +456,7 @@ function RankingsPage() {
           {
             accessorKey: 'dynKtcNorm',
             header: 'KTC norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
           },
           {
             accessorKey: 'dynTierKtc',
@@ -475,7 +483,7 @@ function RankingsPage() {
           {
             accessorKey: 'dynDdNorm',
             header: 'DD norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
           },
           {
             accessorKey: 'dynTierDd',
@@ -507,7 +515,7 @@ function RankingsPage() {
           {
             accessorKey: 'dynFcNorm',
             header: 'FC norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
           },
           {
             accessorKey: 'dynTierFc',
@@ -532,15 +540,18 @@ function RankingsPage() {
               const val = getValue() as number | null
               const p = row.original
               const pr = formatPosRankLabel(p.position, p.dynAvgPosRank)
-              if (val === null) return '-'
-              return (
-                <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="font-semibold">{val.toLocaleString()}</span>
-                  {p.dynAvgPosRank != null ? (
-                    <span className="text-muted-foreground text-xs">{pr}</span>
-                  ) : null}
-                </div>
-              )
+              const inner =
+                val === null ? (
+                  <span>-</span>
+                ) : (
+                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
+                    {p.dynAvgPosRank != null ? (
+                      <span className="text-muted-foreground text-xs">{pr}</span>
+                    ) : null}
+                  </span>
+                )
+              return wrapNormWithLaneTooltip(metricLane, 'dynasty', p, inner)
             },
           },
           {
@@ -568,7 +579,7 @@ function RankingsPage() {
           {
             accessorKey: 'rdKtcNorm',
             header: 'KTC norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
           },
           {
             accessorKey: 'rdTierKtc',
@@ -595,7 +606,7 @@ function RankingsPage() {
           {
             accessorKey: 'rdDdNorm',
             header: 'ADP norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
           },
           {
             accessorKey: 'rdTierDd',
@@ -627,7 +638,7 @@ function RankingsPage() {
           {
             accessorKey: 'rdFcNorm',
             header: 'FC norm',
-            cell: ({ getValue }) => normCell(getValue() as number | null),
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
           },
           {
             accessorKey: 'rdTierFc',
@@ -652,15 +663,18 @@ function RankingsPage() {
               const val = getValue() as number | null
               const p = row.original
               const pr = formatPosRankLabel(p.position, p.rdAvgPosRank)
-              if (val === null) return '-'
-              return (
-                <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="font-semibold">{val.toLocaleString()}</span>
-                  {p.rdAvgPosRank != null ? (
-                    <span className="text-muted-foreground text-xs">{pr}</span>
-                  ) : null}
-                </div>
-              )
+              const inner =
+                val === null ? (
+                  <span>-</span>
+                ) : (
+                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
+                    {p.rdAvgPosRank != null ? (
+                      <span className="text-muted-foreground text-xs">{pr}</span>
+                    ) : null}
+                  </span>
+                )
+              return wrapNormWithLaneTooltip(metricLane, 'redraft', p, inner)
             },
           },
           {
@@ -672,7 +686,7 @@ function RankingsPage() {
       },
     ]
 
-  }, [dynConsensusCutoff, rdConsensusCutoff, search.leagueId])
+  }, [dynConsensusCutoff, metricLane, rdConsensusCutoff, search.leagueId])
 
   const table = useReactTable({
     data: filteredData,

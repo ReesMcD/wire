@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -10,6 +10,13 @@ import {
 } from '@tanstack/react-table'
 import { PageSubheader } from '@/components/ui/page-subheader'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useLeagueRoute } from '@/lib/league-route-context'
 import type { LeagueUser, Roster } from '@/lib/db/schema'
@@ -21,6 +28,7 @@ import { computeMinAbsDeltaPercentileCutoff } from '@/lib/rankings/consensus-thr
 import { formatPosRankLabel } from '@/lib/rankings/neighbor-lists'
 import { useUiSettings } from '@/lib/stores/ui-settings'
 import { laneLabel } from '@/lib/rankings/explain'
+import { wrapNormWithLaneTooltip, type TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
 
 function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   const u = users.find((x) => x.userId === roster.ownerId)
@@ -34,6 +42,15 @@ function ownerDisplayName(roster: Roster, users: LeagueUser[]) {
 
 function isPick(p: AggregatedPlayer) {
   return p.sleeperId.startsWith('pick:') || p.position === 'PICK'
+}
+
+type TeamRosterSortSource = 'avg' | 'ktc' | 'fc' | 'dd'
+
+function sortAccessorId(lane: TableMetricLane, source: TeamRosterSortSource): string {
+  const pre = lane === 'dynasty' ? 'dyn' : 'rd'
+  const tail =
+    source === 'avg' ? 'AvgNorm' : source === 'ktc' ? 'KtcNorm' : source === 'fc' ? 'FcNorm' : 'DdNorm'
+  return `${pre}${tail}`
 }
 
 const tierCell = (val: number | null) =>
@@ -52,12 +69,17 @@ function TeamPage() {
     Number.isFinite(rosterIdNum) ? leagueSnapshot.rosters.find((r) => r.rosterId === rosterIdNum) : undefined
   if (!roster) throw notFound()
 
-  const metricLane = useUiSettings((s) => s.metricLane)
+  const metricLane = useUiSettings((s) => s.metricLane) as TableMetricLane
   const normMode = useUiSettings((s) => s.normMode)
   const hidePickRows = useUiSettings((s) => s.hidePickRows)
+  const [teamRosterSortSource, setTeamRosterSortSource] = useState<TeamRosterSortSource>('avg')
   const [sorting, setSorting] = useState<SortingState>([
-    { id: metricLane === 'dynasty' ? 'dynAvgNorm' : 'rdAvgNorm', desc: true },
+    { id: sortAccessorId(metricLane, 'avg'), desc: true },
   ])
+
+  useEffect(() => {
+    setSorting([{ id: sortAccessorId(metricLane, teamRosterSortSource), desc: true }])
+  }, [metricLane, teamRosterSortSource])
 
   const aggregated = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
@@ -92,7 +114,13 @@ function TeamPage() {
   )
 
   const columns = useMemo((): ColumnDef<AggregatedPlayer>[] => {
-    const normCell = (val: number | null) => (val !== null ? val.toLocaleString() : '-')
+    const normCell = (val: number | null, player: AggregatedPlayer, columnLane: TableMetricLane) =>
+      wrapNormWithLaneTooltip(
+        metricLane,
+        columnLane,
+        player,
+        <span className="tabular-nums">{val !== null ? val.toLocaleString() : '-'}</span>,
+      )
     const rawCell = (val: number | null) => (
       <span className="text-muted-foreground">{val !== null ? val.toLocaleString() : '-'}</span>
     )
@@ -134,14 +162,18 @@ function TeamPage() {
           const depthTier = depthMap.get(row.original.sleeperId) ?? 'bench'
           return (
             <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
-              <Link
-                to="/player/$sleeperId"
-                params={{ sleeperId: row.original.sleeperId }}
-                search={{ leagueId }}
-                className="font-medium hover:underline"
-              >
-                {row.original.name}
-              </Link>
+              {isPick(row.original) ? (
+                <span className="font-medium">{row.original.name}</span>
+              ) : (
+                <Link
+                  to="/player/$sleeperId"
+                  params={{ sleeperId: row.original.sleeperId }}
+                  search={{ leagueId }}
+                  className="font-medium hover:underline"
+                >
+                  {row.original.name}
+                </Link>
+              )}
               {row.original.position ? (
                 <Badge variant="outline" className="text-xs">
                   {row.original.position}
@@ -193,7 +225,11 @@ function TeamPage() {
               rankCellDynKtc(row.original, getValue() as number | null, row.original.dynKtcPosRank),
           },
           { accessorKey: 'dynKtcValue', header: 'KTC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'dynKtcNorm', header: 'KTC norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'dynKtcNorm',
+            header: 'KTC norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
+          },
           { accessorKey: 'dynTierKtc', header: 'T KTC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
         ],
       },
@@ -208,7 +244,11 @@ function TeamPage() {
               rankCellSimple(row.original, getValue() as number | null, row.original.dynDdPosRank),
           },
           { accessorKey: 'dynDdValue', header: 'DD raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'dynDdNorm', header: 'DD norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'dynDdNorm',
+            header: 'DD norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
+          },
           { accessorKey: 'dynTierDd', header: 'T DD', cell: ({ getValue }) => tierCell(getValue() as number | null) },
           { accessorKey: 'dynDeltaNormDdVsKtc', header: 'Δ pts DD', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
         ],
@@ -224,7 +264,11 @@ function TeamPage() {
               rankCellSimple(row.original, getValue() as number | null, row.original.dynFcPosRank),
           },
           { accessorKey: 'dynFcValue', header: 'FC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'dynFcNorm', header: 'FC norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'dynFcNorm',
+            header: 'FC norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
+          },
           { accessorKey: 'dynTierFc', header: 'T FC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
           { accessorKey: 'dynDeltaNormFcVsKtc', header: 'Δ pts', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
         ],
@@ -238,17 +282,20 @@ function TeamPage() {
             header: 'Avg',
             cell: ({ row, getValue }) => {
               const val = getValue() as number | null
-              if (val === null) return '-'
-              return (
-                <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="font-semibold">{val.toLocaleString()}</span>
-                  {row.original.dynAvgPosRank != null ? (
-                    <span className="text-muted-foreground text-xs">
-                      {formatPosRankLabel(row.original.position, row.original.dynAvgPosRank)}
-                    </span>
-                  ) : null}
-                </div>
-              )
+              const p = row.original
+              const pr = formatPosRankLabel(p.position, p.dynAvgPosRank)
+              const inner =
+                val === null ? (
+                  <span>-</span>
+                ) : (
+                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
+                    {p.dynAvgPosRank != null ? (
+                      <span className="text-muted-foreground text-xs">{pr}</span>
+                    ) : null}
+                  </span>
+                )
+              return wrapNormWithLaneTooltip(metricLane, 'dynasty', p, inner)
             },
           },
           { accessorKey: 'dynTierAvg', header: 'Tier Σ', cell: ({ getValue }) => tierCell(getValue() as number | null) },
@@ -265,7 +312,11 @@ function TeamPage() {
               rankCellRdKtc(row.original, getValue() as number | null, row.original.rdKtcPosRank),
           },
           { accessorKey: 'rdKtcValue', header: 'KTC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'rdKtcNorm', header: 'KTC norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'rdKtcNorm',
+            header: 'KTC norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
+          },
           { accessorKey: 'rdTierKtc', header: 'T KTC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
         ],
       },
@@ -280,7 +331,11 @@ function TeamPage() {
               rankCellSimple(row.original, getValue() as number | null, row.original.rdDdPosRank),
           },
           { accessorKey: 'rdDdValue', header: 'ADP raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'rdDdNorm', header: 'ADP norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'rdDdNorm',
+            header: 'ADP norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
+          },
           { accessorKey: 'rdTierDd', header: 'T ADP', cell: ({ getValue }) => tierCell(getValue() as number | null) },
           { accessorKey: 'rdDeltaNormDdVsKtc', header: 'Δ pts ADP', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
         ],
@@ -296,7 +351,11 @@ function TeamPage() {
               rankCellSimple(row.original, getValue() as number | null, row.original.rdFcPosRank),
           },
           { accessorKey: 'rdFcValue', header: 'FC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          { accessorKey: 'rdFcNorm', header: 'FC norm', cell: ({ getValue }) => normCell(getValue() as number | null) },
+          {
+            accessorKey: 'rdFcNorm',
+            header: 'FC norm',
+            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
+          },
           { accessorKey: 'rdTierFc', header: 'T FC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
           { accessorKey: 'rdDeltaNormFcVsKtc', header: 'Δ pts', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
         ],
@@ -310,24 +369,27 @@ function TeamPage() {
             header: 'Avg',
             cell: ({ row, getValue }) => {
               const val = getValue() as number | null
-              if (val === null) return '-'
-              return (
-                <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <span className="font-semibold">{val.toLocaleString()}</span>
-                  {row.original.rdAvgPosRank != null ? (
-                    <span className="text-muted-foreground text-xs">
-                      {formatPosRankLabel(row.original.position, row.original.rdAvgPosRank)}
-                    </span>
-                  ) : null}
-                </div>
-              )
+              const p = row.original
+              const pr = formatPosRankLabel(p.position, p.rdAvgPosRank)
+              const inner =
+                val === null ? (
+                  <span>-</span>
+                ) : (
+                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
+                    {p.rdAvgPosRank != null ? (
+                      <span className="text-muted-foreground text-xs">{pr}</span>
+                    ) : null}
+                  </span>
+                )
+              return wrapNormWithLaneTooltip(metricLane, 'redraft', p, inner)
             },
           },
           { accessorKey: 'rdTierAvg', header: 'Tier Σ', cell: ({ getValue }) => tierCell(getValue() as number | null) },
         ],
       },
     ]
-  }, [depthMap, dynConsensusCutoff, leagueId, rdConsensusCutoff])
+  }, [depthMap, dynConsensusCutoff, leagueId, metricLane, rdConsensusCutoff])
 
   const table = useReactTable({
     data: rosterPlayers,
@@ -354,6 +416,23 @@ function TeamPage() {
           {owner ? (
             <span className="text-muted-foreground hidden min-w-0 truncate text-xs sm:inline">{owner}</span>
           ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-muted-foreground hidden text-xs sm:inline">Sort</span>
+          <Select
+            value={teamRosterSortSource}
+            onValueChange={(v) => setTeamRosterSortSource(v as TeamRosterSortSource)}
+          >
+            <SelectTrigger size="sm" className="h-8 w-[8.25rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="avg">Avg</SelectItem>
+              <SelectItem value="ktc">KTC</SelectItem>
+              <SelectItem value="fc">FantasyCalc</SelectItem>
+              <SelectItem value="dd">{metricLane === 'dynasty' ? 'Dynasty Daddy' : 'ADP Daddy'}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <span className="text-muted-foreground hidden shrink-0 text-xs sm:inline">
           {lane} · {normMode}

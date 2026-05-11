@@ -318,10 +318,7 @@ function PlayerPage() {
           <TooltipContent>{explainLane('redraft')}</TooltipContent>
         </Tooltip>
         <span className="ml-2 border-l border-border pl-3 text-xs text-muted-foreground">
-          Norm scale: <span className="font-medium text-foreground">{normMode}</span> ·{' '}
-          <Link to="/settings" className="underline">
-            Settings
-          </Link>
+          Norm scale: <span className="font-medium text-foreground">{normMode}</span>
         </span>
       </div>
 

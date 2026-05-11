@@ -18,6 +18,22 @@ export function ddLane(p: AggregatedPlayer, lane: MetricLane): number | null {
   return lane === 'dynasty' ? p.dynDdNorm : p.rdDdNorm
 }
 
+/** Which normalized source drives a single “display norm” cell (e.g. league roster list). */
+export type NormLaneSource = 'avg' | 'ktc' | 'fc' | 'dd'
+
+export function normByLaneSource(p: AggregatedPlayer, lane: MetricLane, source: NormLaneSource): number | null {
+  switch (source) {
+    case 'avg':
+      return avgLane(p, lane)
+    case 'ktc':
+      return ktcLane(p, lane)
+    case 'fc':
+      return fcLane(p, lane)
+    case 'dd':
+      return ddLane(p, lane)
+  }
+}
+
 /**
  * Scalar fed into league-wide “Power” percentiles. Default: sum of avg norms in the pool
  * (full roster or value-optimal starters, depending on caller). Replace with weighted starters,

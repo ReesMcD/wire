@@ -5,9 +5,12 @@ import { cn } from '@/lib/utils'
 export function PageSubheader({
   children,
   className,
+  contentClassName,
 }: {
   children: ReactNode
   className?: string
+  /** Merged onto the inner flex row (e.g. `lg:h-auto` when the subheader grows on large screens). */
+  contentClassName?: string
 }) {
   return (
     <div
@@ -16,7 +19,12 @@ export function PageSubheader({
         className,
       )}
     >
-      <div className="mx-auto flex h-12 min-h-12 min-w-0 w-full max-w-[100vw] items-center gap-2 px-4 sm:px-6">
+      <div
+        className={cn(
+          'mx-auto flex h-12 min-h-12 min-w-0 w-full max-w-[100vw] items-center gap-2 px-4 sm:px-6',
+          contentClassName,
+        )}
+      >
         {children}
       </div>
     </div>

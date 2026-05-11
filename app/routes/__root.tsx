@@ -3,6 +3,7 @@ import { createRootRoute, HeadContent, Link, Outlet, Scripts } from '@tanstack/r
 
 import { SettingsDialogTrigger } from '@/components/settings/settings-dialog'
 import { LeagueRefreshButton } from '@/components/league-refresh-button'
+import { LeagueWaiverNavLink } from '@/components/league-waiver-nav-link'
 import { ModeToggle } from '@/components/mode-toggle'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -56,6 +57,7 @@ function RootComponent() {
                 >
                   League
                 </Link>
+                <LeagueWaiverNavLink />
                 <Link
                   to="/sync"
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"

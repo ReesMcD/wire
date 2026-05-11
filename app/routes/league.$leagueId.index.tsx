@@ -9,7 +9,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { useState } from 'react'
-import { Settings, SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -29,8 +29,10 @@ import {
   defaultPowerInput,
   fcLane,
   ktcLane,
+  normByLaneSource,
   type DepthTier,
   type MetricLane,
+  type NormLaneSource,
   weightedDepthPowerInput,
 } from '@/lib/rankings/league-board-power-input'
 import { depthTierByPlayerId, selectValueStarters } from '@/lib/rankings/league-board-depth'
@@ -44,6 +46,10 @@ import { useLeagueRoute } from '@/lib/league-route-context'
 import { useUiSettings, type ScoreDisplay } from '@/lib/stores/ui-settings'
 import { ConsensusFlag } from '@/components/league/consensus-flag'
 import { ConsensusIndicatorSettings } from '@/components/league/consensus-indicator-settings'
+import {
+  LeagueRosterSlotTooltipBody,
+  type LeagueRosterSlotConsensusCtx,
+} from '@/components/league/league-roster-slot-tooltip'
 import { computeMinAbsDeltaPercentileCutoff } from '@/lib/rankings/consensus-threshold'
 import {
   explainBadge,
@@ -103,6 +109,42 @@ function clampWeight(n: number): number {
   return n
 }
 
+function leagueOverviewNormSourceLabel(source: NormLaneSource, metricLane: MetricLane): string {
+  if (source === 'avg') return 'Avg'
+  if (source === 'ktc') return 'KTC'
+  if (source === 'fc') return 'FantasyCalc'
+  return metricLane === 'dynasty' ? 'Dynasty Daddy' : 'ADP Daddy'
+}
+
+function RosterSlotNormCell({
+  displayNorm,
+  player,
+  consensus,
+}: {
+  displayNorm: number | null
+  player: AggregatedPlayer | undefined
+  consensus: LeagueRosterSlotConsensusCtx
+}) {
+  const inner = (
+    <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+      {displayNorm != null ? displayNorm.toLocaleString() : '—'}
+    </span>
+  )
+  if (!player) return inner
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-help items-center underline decoration-dotted decoration-muted-foreground/60 underline-offset-2">
+          {inner}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" className="max-w-sm">
+        <LeagueRosterSlotTooltipBody player={player} consensus={consensus} />
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export const Route = createFileRoute('/league/$leagueId/')({
   component: LeagueOverviewPage,
 })
@@ -128,6 +170,8 @@ function LeagueOverviewPage() {
   const setOverviewTab = useUiSettings((s) => s.setLeagueOverviewTab)
   const leagueFiltersCollapsed = useUiSettings((s) => s.leagueFiltersCollapsed)
   const setLeagueFiltersCollapsed = useUiSettings((s) => s.setLeagueFiltersCollapsed)
+  const leagueOverviewDisplayNormSource = useUiSettings((s) => s.leagueOverviewDisplayNormSource)
+  const setLeagueOverviewDisplayNormSource = useUiSettings((s) => s.setLeagueOverviewDisplayNormSource)
 
   const aggregated = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
@@ -137,9 +181,38 @@ function LeagueOverviewPage() {
   const bySleeperId = useMemo(() => new Map(aggregated.map((p) => [p.sleeperId, p])), [aggregated])
 
   const consensusPercentileSetting = useUiSettings((s) => s.consensusPercentile)
+  const consensusThresholdMode = useUiSettings((s) => s.consensusThresholdMode)
+  const consensusRankMinGap = useUiSettings((s) => s.consensusRankMinGap)
+  const consensusMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
   const consensusCutoffLane = useMemo(
     () => computeMinAbsDeltaPercentileCutoff(aggregated, metricLane, consensusPercentileSetting),
     [aggregated, metricLane, consensusPercentileSetting],
+  )
+  const dynConsensusCutoff = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregated, 'dynasty', consensusPercentileSetting),
+    [aggregated, consensusPercentileSetting],
+  )
+  const rdConsensusCutoff = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregated, 'redraft', consensusPercentileSetting),
+    [aggregated, consensusPercentileSetting],
+  )
+  const rosterSlotConsensus = useMemo(
+    (): LeagueRosterSlotConsensusCtx => ({
+      mode: consensusThresholdMode,
+      rankMinGap: consensusRankMinGap,
+      percentile: consensusPercentileSetting,
+      signMinNormDiff: consensusMinNormDiff,
+      dynPercentileCutoff: dynConsensusCutoff,
+      rdPercentileCutoff: rdConsensusCutoff,
+    }),
+    [
+      consensusThresholdMode,
+      consensusRankMinGap,
+      consensusPercentileSetting,
+      consensusMinNormDiff,
+      dynConsensusCutoff,
+      rdConsensusCutoff,
+    ],
   )
 
   const tierAllowed = (tier: DepthTier) =>
@@ -178,7 +251,7 @@ function LeagueOverviewPage() {
             name: m?.name ?? formatPickSlotId(slotId),
             position: 'PICK' as string | null,
             depthTier: 'bench' as DepthTier,
-            avg: m ? avgLane(m, metricLane) : null,
+            displayNorm: m ? normByLaneSource(m, metricLane, leagueOverviewDisplayNormSource) : null,
             deltaFc: null as number | null,
             deltaDd: null as number | null,
           }
@@ -202,17 +275,17 @@ function LeagueOverviewPage() {
           name: m?.name ?? (pl ? `${pl.firstName} ${pl.lastName}` : slotId),
           position: m?.position ?? pl?.position ?? null,
           depthTier,
-          avg: m ? avgLane(m, metricLane) : null,
+          displayNorm: m ? normByLaneSource(m, metricLane, leagueOverviewDisplayNormSource) : null,
           deltaFc,
           deltaDd,
         }
       })
 
-      const rosterSlotsByAvg = [...rosterSlots].sort((a, b) => {
-        if (a.avg == null && b.avg == null) return a.slotId.localeCompare(b.slotId)
-        if (a.avg == null) return 1
-        if (b.avg == null) return -1
-        if (b.avg !== a.avg) return b.avg - a.avg
+      const rosterSlotsSorted = [...rosterSlots].sort((a, b) => {
+        if (a.displayNorm == null && b.displayNorm == null) return a.slotId.localeCompare(b.slotId)
+        if (a.displayNorm == null) return 1
+        if (b.displayNorm == null) return -1
+        if (b.displayNorm !== a.displayNorm) return b.displayNorm - a.displayNorm
         return a.name.localeCompare(b.name)
       })
 
@@ -220,7 +293,7 @@ function LeagueOverviewPage() {
         roster,
         label: rosterDisplayName(roster, leagueSnapshot.users),
         starters,
-        rosterSlots: rosterSlotsByAvg,
+        rosterSlots: rosterSlotsSorted,
         otherCount: fullMetrics.filter((p) => !starterIds.has(p.sleeperId)).length,
         rawPower,
         rawKtc,
@@ -325,6 +398,7 @@ function LeagueOverviewPage() {
     depthWeights,
     scoreDisplay,
     players,
+    leagueOverviewDisplayNormSource,
   ])
 
   const sortedTeams = useMemo(
@@ -435,6 +509,32 @@ function LeagueOverviewPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Roster list value:</span>
+        {(['avg', 'ktc', 'fc', 'dd'] as const).map((src) => {
+          const label =
+            src === 'avg'
+              ? 'Avg'
+              : src === 'ktc'
+                ? 'KTC'
+                : src === 'fc'
+                  ? 'FantasyCalc'
+                  : metricLane === 'dynasty'
+                    ? 'Dynasty Daddy'
+                    : 'ADP Daddy'
+          return (
+            <Button
+              key={src}
+              size="sm"
+              variant={leagueOverviewDisplayNormSource === src ? 'default' : 'outline'}
+              onClick={() => setLeagueOverviewDisplayNormSource(src)}
+            >
+              {label}
+            </Button>
+          )
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground text-sm">Power:</span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -534,59 +634,49 @@ function LeagueOverviewPage() {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-4 sm:px-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-4 sm:px-4">
       <PageSubheader className="mx-[-0.75rem] sm:mx-[-1rem]">
-        <div className="relative h-12 w-full min-w-0">
-          <div className="absolute inset-0 hidden min-w-0 items-center gap-2 sm:flex">
-            <Popover open={!leagueFiltersCollapsed} onOpenChange={(open) => setLeagueFiltersCollapsed(!open)}>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-2">
-                  <SlidersHorizontal className="size-4" />
-                  Filters
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="max-h-[min(72vh,560px)] w-[min(calc(100vw-2rem),54rem)] overflow-y-auto p-3"
-                onOpenAutoFocus={(e) => e.preventDefault()}
-              >
-                {filterPanel}
-              </PopoverContent>
-            </Popover>
-            <span className="min-w-0 truncate text-xs text-muted-foreground">
-              {lane} · {normMode} · {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · {scoreDisplay}
-            </span>
-            <Link to="/settings" className="ml-auto shrink-0">
-              <Button type="button" variant="ghost" size="icon" className="size-8" title="Settings">
-                <Settings className="size-4" />
-                <span className="sr-only">Settings</span>
+        {/* sm+: one row — filters in popover (includes consensus); no separate settings strip */}
+        <div className="hidden h-12 w-full min-w-0 items-center gap-2 sm:flex">
+          <Popover open={!leagueFiltersCollapsed} onOpenChange={(open) => setLeagueFiltersCollapsed(!open)}>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-2">
+                <SlidersHorizontal className="size-4" />
+                Filters
               </Button>
-            </Link>
-          </div>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="max-h-[min(72vh,560px)] w-[min(calc(100vw-2rem),54rem)] overflow-y-auto p-3"
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              {filterPanel}
+            </PopoverContent>
+          </Popover>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {lane} · {normMode} · {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power ·{' '}
+            {scoreDisplay}
+          </span>
+        </div>
 
-          <div className="absolute inset-0 flex min-w-0 items-center gap-2 sm:hidden">
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {lane} · {normMode} · {pool}
-            </span>
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button type="button" variant="outline" size="icon" className="size-9 shrink-0" title="Filters">
-                  <SlidersHorizontal className="size-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="bottom" className="flex h-[min(75vh,560px)] flex-col overflow-hidden">
-                <SheetHeader className="shrink-0">
-                  <SheetTitle>League filters</SheetTitle>
-                </SheetHeader>
-                <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">{filterPanel}</div>
-              </SheetContent>
-            </Sheet>
-            <Link to="/settings" className="shrink-0">
-              <Button type="button" variant="ghost" size="icon" className="size-9" title="Settings">
-                <Settings className="size-4" />
+        {/* Narrow: one row — summary + sheet */}
+        <div className="flex h-12 w-full min-w-0 items-center gap-2 sm:hidden">
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {lane} · {normMode} · {pool}
+          </span>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button type="button" variant="outline" size="icon" className="size-9 shrink-0" title="Filters">
+                <SlidersHorizontal className="size-4" />
               </Button>
-            </Link>
-          </div>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="flex h-[min(75vh,560px)] flex-col overflow-hidden">
+              <SheetHeader className="shrink-0">
+                <SheetTitle>League filters</SheetTitle>
+              </SheetHeader>
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">{filterPanel}</div>
+            </SheetContent>
+          </Sheet>
         </div>
       </PageSubheader>
 
@@ -605,10 +695,10 @@ function LeagueOverviewPage() {
             <TabsTrigger value="positions">Positions</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="teams" className="mt-3 flex min-h-0 flex-1 flex-col">
-            <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-4 overflow-auto pb-4 md:grid-cols-2 xl:grid-cols-3">
+          <TabsContent value="teams" className="mt-3 flex flex-col">
+            <div className="grid auto-rows-min grid-cols-1 gap-4 pb-4 md:grid-cols-2 xl:grid-cols-3">
               {sortedTeams.map((row) => (
-                <Card key={row.roster.rosterId} className="flex min-h-0 flex-col overflow-hidden border-border shadow-sm">
+                <Card key={row.roster.rosterId} className="flex flex-col border-border shadow-sm">
                   <CardHeader className="space-y-3 pb-3">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <CardTitle className="text-lg leading-tight">
@@ -706,12 +796,14 @@ function LeagueOverviewPage() {
                       })}
                     </div>
                     <CardDescription className="text-xs">
-                      Pool: {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · Sorted by avg ({lane}) · “—” = no value
+                      Pool: {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · Sorted by{' '}
+                      {leagueOverviewNormSourceLabel(leagueOverviewDisplayNormSource, metricLane)} ({lane}) · “—” = no
+                      value
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex min-h-0 flex-1 flex-col gap-0 border-t border-border pt-3">
+                  <CardContent className="flex flex-col gap-0 border-t border-border pt-3">
                     <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wide">Roster</p>
-                    <ul className="max-h-[min(420px,55vh)] space-y-1.5 overflow-y-auto pr-1 text-sm">
+                    <ul className="space-y-1.5 pr-1 text-sm">
                       {row.rosterSlots.map((slot) => (
                         <li
                           key={slot.slotId}
@@ -753,9 +845,11 @@ function LeagueOverviewPage() {
                               />
                             ) : null}
                           </div>
-                          <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
-                            {slot.avg != null ? slot.avg.toLocaleString() : '—'}
-                          </span>
+                          <RosterSlotNormCell
+                            displayNorm={slot.displayNorm}
+                            player={bySleeperId.get(slot.slotId)}
+                            consensus={rosterSlotConsensus}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -765,7 +859,7 @@ function LeagueOverviewPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="positions" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <TabsContent value="positions" className="mt-3 flex flex-col">
             <PositionalOverviewTable
               teams={sortedTeams}
               leagueId={leagueId}

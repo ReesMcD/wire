@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
-import { Info, Settings, SlidersHorizontal } from 'lucide-react'
+import { Info, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -342,9 +341,12 @@ export function RankingsToolbar({
   )
 
   return (
-    <PageSubheader>
-      <div className="relative h-12 w-full min-w-0">
-        <div className="absolute inset-0 z-[1] hidden min-w-0 items-center gap-2 sm:flex">
+    <PageSubheader
+      contentClassName="items-center lg:h-auto lg:max-h-[min(48vh,440px)] lg:items-stretch lg:py-1.5"
+    >
+      <div className="relative h-12 w-full min-w-0 lg:h-auto lg:min-h-12">
+        {/* sm–lg: filters in popover (1024px breakpoint = `lg`). */}
+        <div className="absolute inset-0 z-[1] hidden min-w-0 items-center gap-2 sm:flex lg:hidden">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button type="button" variant="ghost" size="icon" className="text-muted-foreground size-8 shrink-0">
@@ -384,12 +386,31 @@ export function RankingsToolbar({
             {filterPanel}
           </PopoverContent>
         </Popover>
-        <Link to="/settings" className="ml-auto shrink-0">
-          <Button type="button" variant="ghost" size="icon" className="size-8" title="Settings">
-            <Settings className="size-4" />
-            <span className="sr-only">Settings</span>
-          </Button>
-        </Link>
+        </div>
+
+        {/* lg+: filters inline with search / teams */}
+        <div className="relative z-[1] hidden min-w-0 flex-wrap items-center gap-2 lg:flex">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button type="button" variant="ghost" size="icon" className="text-muted-foreground size-8 shrink-0">
+                <Info className="size-4" />
+                <span className="sr-only">League context</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              {leagueMetaTooltip}
+            </TooltipContent>
+          </Tooltip>
+          <Input
+            placeholder="Search players…"
+            value={globalFilter}
+            onChange={(e) => onGlobalFilterChange(e.target.value)}
+            className="h-8 min-w-0 flex-1 max-w-[min(100%,20rem)]"
+          />
+          {teamPopover}
+          <div className="flex min-h-0 min-w-0 max-h-[min(36vh,280px)] flex-1 flex-wrap items-center gap-2 overflow-y-auto pr-1">
+            {filterPanel}
+          </div>
         </div>
 
         <div className="absolute inset-0 z-[1] flex min-w-0 items-center gap-2 sm:hidden">
@@ -445,11 +466,6 @@ export function RankingsToolbar({
             </div>
           </SheetContent>
         </Sheet>
-        <Link to="/settings">
-          <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" title="Settings">
-            <Settings className="size-4" />
-          </Button>
-        </Link>
         </div>
       </div>
     </PageSubheader>

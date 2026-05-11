@@ -3,9 +3,92 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { MetricLane } from '@/lib/rankings/league-board-power-input'
 import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
+import type { ConsensusThresholdMode } from '@/lib/rankings/consensus-threshold'
 import { passesConsensusIndicator, consensusNormSign } from '@/lib/rankings/consensus-threshold'
 import { explainConsensusIconSummary } from '@/lib/rankings/explain'
 import { useUiSettings } from '@/lib/stores/ui-settings'
+
+export interface ConsensusIndicatorLineProps {
+  lane: MetricLane
+  minAbsDeltaPercentileCutoff: number | null
+  deltaFc: number | null | undefined
+  deltaDd: number | null | undefined
+  player: AggregatedPlayer | null | undefined
+  laneLabel: string
+  mode: ConsensusThresholdMode
+  rankMinGap: number
+  percentile: number
+  signMinNormDiff: number
+  /** Omit leading icon when the trigger already shows the same icon (e.g. ConsensusFlag popover). */
+  leadIcon?: boolean
+}
+
+/** FC+DD vs KTC agreement line: optional icon + explanation, or muted “no signal”. For use inside larger tooltips. */
+export function ConsensusIndicatorLine({
+  lane,
+  minAbsDeltaPercentileCutoff,
+  deltaFc,
+  deltaDd,
+  player,
+  laneLabel,
+  mode,
+  rankMinGap,
+  percentile,
+  signMinNormDiff,
+  leadIcon = true,
+}: ConsensusIndicatorLineProps) {
+  const dir = consensusNormSign(deltaFc, deltaDd)
+  const passes = passesConsensusIndicator(
+    player ?? null,
+    lane,
+    deltaFc,
+    deltaDd,
+    mode,
+    rankMinGap,
+    minAbsDeltaPercentileCutoff,
+    signMinNormDiff,
+  )
+  if (!dir || !passes) {
+    return (
+      <p className="text-muted-foreground text-[11px] leading-snug">
+        {laneLabel}: No FC+DD vs KTC signal at the current threshold.
+      </p>
+    )
+  }
+
+  const Icon = dir === 'higher' ? TrendingUp : TrendingDown
+  const color =
+    dir === 'higher'
+      ? 'text-emerald-600 dark:text-emerald-500'
+      : 'text-rose-600 dark:text-rose-400'
+  const directionWord = dir === 'higher' ? 'higher' : 'lower'
+  const subjectWord = dir === 'higher' ? 'undervaluing' : 'overvaluing'
+  const mainLine = `${laneLabel}: FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`
+  const summary = explainConsensusIconSummary({
+    mode,
+    rankMinGap,
+    percentile,
+    percentileCutoff: minAbsDeltaPercentileCutoff,
+    laneLabel,
+    signMinNormDiff,
+  })
+
+  const body = <p className="text-[11px] leading-snug">{mainLine}</p>
+
+  return (
+    <div className="space-y-1.5">
+      {leadIcon ? (
+        <div className="flex items-start gap-2">
+          <Icon className={cn('mt-0.5 shrink-0', color)} size={14} strokeWidth={2.25} />
+          {body}
+        </div>
+      ) : (
+        body
+      )}
+      <p className="text-muted-foreground border-t border-border pt-1.5 text-[10px] leading-snug">{summary}</p>
+    </div>
+  )
+}
 
 interface ConsensusFlagProps {
   lane: MetricLane
@@ -59,17 +142,6 @@ export function ConsensusFlag({
       ? 'text-emerald-600 dark:text-emerald-500'
       : 'text-rose-600 dark:text-rose-400'
   const directionWord = dir === 'higher' ? 'higher' : 'lower'
-  const subjectWord = dir === 'higher' ? 'undervaluing' : 'overvaluing'
-  const lanePrefix = laneLabel ? `${laneLabel}: ` : ''
-  const summary = explainConsensusIconSummary({
-    mode,
-    rankMinGap,
-    percentile,
-    percentileCutoff: minAbsDeltaPercentileCutoff,
-    laneLabel: laneLabel ?? (lane === 'dynasty' ? 'Dynasty' : 'Redraft'),
-    signMinNormDiff,
-  })
-  const mainLine = `${lanePrefix}FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`
 
   return (
     <Tooltip>
@@ -87,8 +159,19 @@ export function ConsensusFlag({
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
-        <p className="text-xs leading-snug">{mainLine}</p>
-        <p className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs leading-snug">{summary}</p>
+        <ConsensusIndicatorLine
+          lane={lane}
+          minAbsDeltaPercentileCutoff={minAbsDeltaPercentileCutoff}
+          deltaFc={deltaFc}
+          deltaDd={deltaDd}
+          player={player}
+          laneLabel={laneLabel ?? (lane === 'dynasty' ? 'Dynasty' : 'Redraft')}
+          mode={mode}
+          rankMinGap={rankMinGap}
+          percentile={percentile}
+          signMinNormDiff={signMinNormDiff}
+          leadIcon={false}
+        />
       </TooltipContent>
     </Tooltip>
   )
