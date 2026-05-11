@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { createRootRoute, HeadContent, Link, Outlet, Scripts } from '@tanstack/react-router'
 
+import '@/styles/app.css'
+
 import { SettingsDialogTrigger } from '@/components/settings/settings-dialog'
 import { LeagueRefreshButton } from '@/components/league-refresh-button'
 import { LeagueWaiverNavLink } from '@/components/league-waiver-nav-link'
@@ -14,11 +16,9 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Fantasy Aggregator' },
+      { title: 'Wire' },
     ],
-    links: [
-      { rel: 'stylesheet', href: '/app/styles/app.css' },
-    ],
+    links: [],
   }),
   component: RootComponent,
 })
@@ -39,7 +39,7 @@ function RootComponent() {
           <header className="shrink-0 border-b border-border">
             <nav className="mx-auto flex max-w-[100vw] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6 sm:py-4">
               <Link to="/" className="text-lg font-bold">
-                Fantasy Aggregator
+                Wire
               </Link>
               <div className="flex flex-1 flex-wrap items-center gap-x-6 gap-y-2">
                 <Link

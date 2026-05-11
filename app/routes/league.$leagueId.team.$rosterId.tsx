@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -7,6 +7,7 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from '@tanstack/react-table'
 import { PageSubheader } from '@/components/ui/page-subheader'
 import { Badge } from '@/components/ui/badge'
@@ -25,10 +26,16 @@ import { depthTierByPlayerId } from '@/lib/rankings/league-board-depth'
 import { cn } from '@/lib/utils'
 import { ConsensusFlag } from '@/components/league/consensus-flag'
 import { computeMinAbsDeltaPercentileCutoff } from '@/lib/rankings/consensus-threshold'
-import { formatPosRankLabel } from '@/lib/rankings/neighbor-lists'
 import { useUiSettings } from '@/lib/stores/ui-settings'
 import { laneLabel } from '@/lib/rankings/explain'
-import { wrapNormWithLaneTooltip, type TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
+import type { TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
+import {
+  mergeRankingsTableColumnVisibility,
+  readRankingsGroupVisibilityFromStorage,
+  RANKINGS_GROUP_COLUMN_IDS,
+  writeRankingsGroupVisibilityToStorage,
+} from '@/lib/rankings/rankings-column-visibility'
+import { wideSpreadsheetDataColumnGroups } from '@/lib/rankings/wide-spreadsheet-data-columns'
 
 function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   const u = users.find((x) => x.userId === roster.ownerId)
@@ -47,14 +54,12 @@ function isPick(p: AggregatedPlayer) {
 type TeamRosterSortSource = 'avg' | 'ktc' | 'fc' | 'dd'
 
 function sortAccessorId(lane: TableMetricLane, source: TeamRosterSortSource): string {
-  const pre = lane === 'dynasty' ? 'dyn' : 'rd'
-  const tail =
-    source === 'avg' ? 'AvgNorm' : source === 'ktc' ? 'KtcNorm' : source === 'fc' ? 'FcNorm' : 'DdNorm'
-  return `${pre}${tail}`
+  const block = lane === 'dynasty' ? 'dynasty' : 'redraft'
+  if (source === 'avg') return `${block}_avg_norm`
+  if (source === 'ktc') return `${block}_ktc_norm`
+  if (source === 'fc') return `${block}_fc_norm`
+  return `${block}_dd_norm`
 }
-
-const tierCell = (val: number | null) =>
-  val !== null ? <Badge variant="secondary">T{val}</Badge> : '-'
 
 export const Route = createFileRoute('/league/$leagueId/team/$rosterId')({
   component: TeamPage,
@@ -72,6 +77,32 @@ function TeamPage() {
   const metricLane = useUiSettings((s) => s.metricLane) as TableMetricLane
   const normMode = useUiSettings((s) => s.normMode)
   const hidePickRows = useUiSettings((s) => s.hidePickRows)
+  const rankingsHideRawValueColumns = useUiSettings((s) => s.rankingsHideRawValueColumns)
+  const rankingsHideSourceTierColumns = useUiSettings((s) => s.rankingsHideSourceTierColumns)
+
+  const [groupColumnVisibility, setGroupColumnVisibility] = useState<VisibilityState>(() =>
+    typeof window === 'undefined' ? {} : readRankingsGroupVisibilityFromStorage(),
+  )
+
+  useEffect(() => {
+    const loaded = readRankingsGroupVisibilityFromStorage()
+    if (Object.keys(loaded).length > 0) setGroupColumnVisibility(loaded)
+  }, [])
+
+  useEffect(() => {
+    writeRankingsGroupVisibilityToStorage(groupColumnVisibility)
+  }, [groupColumnVisibility])
+
+  const mergedColumnVisibility = useMemo(
+    () =>
+      mergeRankingsTableColumnVisibility(
+        groupColumnVisibility,
+        rankingsHideRawValueColumns,
+        rankingsHideSourceTierColumns,
+      ),
+    [groupColumnVisibility, rankingsHideRawValueColumns, rankingsHideSourceTierColumns],
+  )
+
   const [teamRosterSortSource, setTeamRosterSortSource] = useState<TeamRosterSortSource>('avg')
   const [sorting, setSorting] = useState<SortingState>([
     { id: sortAccessorId(metricLane, 'avg'), desc: true },
@@ -114,46 +145,6 @@ function TeamPage() {
   )
 
   const columns = useMemo((): ColumnDef<AggregatedPlayer>[] => {
-    const normCell = (val: number | null, player: AggregatedPlayer, columnLane: TableMetricLane) =>
-      wrapNormWithLaneTooltip(
-        metricLane,
-        columnLane,
-        player,
-        <span className="tabular-nums">{val !== null ? val.toLocaleString() : '-'}</span>,
-      )
-    const rawCell = (val: number | null) => (
-      <span className="text-muted-foreground">{val !== null ? val.toLocaleString() : '-'}</span>
-    )
-    const deltaPtsCell = (val: number | null) => {
-      if (val === null) return '-'
-      const text = val > 0 ? `+${val.toLocaleString()}` : val.toLocaleString()
-      return <span className="text-muted-foreground">{text}</span>
-    }
-    const rankCellDynKtc = (p: AggregatedPlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-    const rankCellRdKtc = (p: AggregatedPlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-    const rankCellSimple = (p: AggregatedPlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-
     return [
       {
         accessorKey: 'name',
@@ -212,188 +203,35 @@ function TeamPage() {
         header: 'Team',
         cell: ({ getValue }) => <span className="text-muted-foreground">{(getValue() as string) ?? 'FA'}</span>,
       },
-      {
-        id: 'dynasty_ktc',
-        header: 'KTC Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynKtcRank',
-            header: 'KTC #',
-            cell: ({ row, getValue }) =>
-              rankCellDynKtc(row.original, getValue() as number | null, row.original.dynKtcPosRank),
-          },
-          { accessorKey: 'dynKtcValue', header: 'KTC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'dynKtcNorm',
-            header: 'KTC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          { accessorKey: 'dynTierKtc', header: 'T KTC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'dynasty_dd',
-        header: 'Dynasty Daddy',
-        columns: [
-          {
-            accessorKey: 'dynDdRank',
-            header: 'DD #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.dynDdPosRank),
-          },
-          { accessorKey: 'dynDdValue', header: 'DD raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'dynDdNorm',
-            header: 'DD norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          { accessorKey: 'dynTierDd', header: 'T DD', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-          { accessorKey: 'dynDeltaNormDdVsKtc', header: 'Δ pts DD', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'dynasty_fc',
-        header: 'FantasyCalc Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynFcRank',
-            header: 'FC #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.dynFcPosRank),
-          },
-          { accessorKey: 'dynFcValue', header: 'FC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'dynFcNorm',
-            header: 'FC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          { accessorKey: 'dynTierFc', header: 'T FC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-          { accessorKey: 'dynDeltaNormFcVsKtc', header: 'Δ pts', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'dynasty_avg',
-        header: 'Avg Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynAvgNorm',
-            header: 'Avg',
-            cell: ({ row, getValue }) => {
-              const val = getValue() as number | null
-              const p = row.original
-              const pr = formatPosRankLabel(p.position, p.dynAvgPosRank)
-              const inner =
-                val === null ? (
-                  <span>-</span>
-                ) : (
-                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
-                    {p.dynAvgPosRank != null ? (
-                      <span className="text-muted-foreground text-xs">{pr}</span>
-                    ) : null}
-                  </span>
-                )
-              return wrapNormWithLaneTooltip(metricLane, 'dynasty', p, inner)
-            },
-          },
-          { accessorKey: 'dynTierAvg', header: 'Tier Σ', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'redraft_ktc',
-        header: 'KTC Redraft',
-        columns: [
-          {
-            accessorKey: 'rdKtcRank',
-            header: 'KTC #',
-            cell: ({ row, getValue }) =>
-              rankCellRdKtc(row.original, getValue() as number | null, row.original.rdKtcPosRank),
-          },
-          { accessorKey: 'rdKtcValue', header: 'KTC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'rdKtcNorm',
-            header: 'KTC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          { accessorKey: 'rdTierKtc', header: 'T KTC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'redraft_dd',
-        header: 'ADP Daddy',
-        columns: [
-          {
-            accessorKey: 'rdDdRank',
-            header: 'ADP #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.rdDdPosRank),
-          },
-          { accessorKey: 'rdDdValue', header: 'ADP raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'rdDdNorm',
-            header: 'ADP norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          { accessorKey: 'rdTierDd', header: 'T ADP', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-          { accessorKey: 'rdDeltaNormDdVsKtc', header: 'Δ pts ADP', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'redraft_fc',
-        header: 'FantasyCalc Redraft',
-        columns: [
-          {
-            accessorKey: 'rdFcRank',
-            header: 'FC #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.rdFcPosRank),
-          },
-          { accessorKey: 'rdFcValue', header: 'FC raw', cell: ({ getValue }) => rawCell(getValue() as number | null) },
-          {
-            accessorKey: 'rdFcNorm',
-            header: 'FC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          { accessorKey: 'rdTierFc', header: 'T FC', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-          { accessorKey: 'rdDeltaNormFcVsKtc', header: 'Δ pts', cell: ({ getValue }) => deltaPtsCell(getValue() as number | null) },
-        ],
-      },
-      {
-        id: 'redraft_avg',
-        header: 'Avg Redraft',
-        columns: [
-          {
-            accessorKey: 'rdAvgNorm',
-            header: 'Avg',
-            cell: ({ row, getValue }) => {
-              const val = getValue() as number | null
-              const p = row.original
-              const pr = formatPosRankLabel(p.position, p.rdAvgPosRank)
-              const inner =
-                val === null ? (
-                  <span>-</span>
-                ) : (
-                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
-                    {p.rdAvgPosRank != null ? (
-                      <span className="text-muted-foreground text-xs">{pr}</span>
-                    ) : null}
-                  </span>
-                )
-              return wrapNormWithLaneTooltip(metricLane, 'redraft', p, inner)
-            },
-          },
-          { accessorKey: 'rdTierAvg', header: 'Tier Σ', cell: ({ getValue }) => tierCell(getValue() as number | null) },
-        ],
-      },
+      ...wideSpreadsheetDataColumnGroups({ metricLane }),
     ]
   }, [depthMap, dynConsensusCutoff, leagueId, metricLane, rdConsensusCutoff])
+
+  const onColumnVisibilityChange = useCallback(
+    (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+      setGroupColumnVisibility((prevGroups) => {
+        const prevMerged = mergeRankingsTableColumnVisibility(
+          prevGroups,
+          rankingsHideRawValueColumns,
+          rankingsHideSourceTierColumns,
+        )
+        const nextFull = typeof updater === 'function' ? updater(prevMerged) : updater
+        const nextGroups: VisibilityState = { ...prevGroups }
+        for (const id of RANKINGS_GROUP_COLUMN_IDS) {
+          if (id in nextFull) nextGroups[id] = nextFull[id]
+        }
+        return nextGroups
+      })
+    },
+    [rankingsHideRawValueColumns, rankingsHideSourceTierColumns],
+  )
 
   const table = useReactTable({
     data: rosterPlayers,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility: mergedColumnVisibility },
     onSortingChange: setSorting,
+    onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   })
@@ -401,7 +239,7 @@ function TeamPage() {
   const teamLabel = rosterDisplayName(roster, leagueSnapshot.users)
   const owner = ownerDisplayName(roster, leagueSnapshot.users)
   const lane = laneLabel(metricLane)
-  const leafColumnCount = table.getAllLeafColumns().length
+  const leafColumnCount = table.getVisibleLeafColumns().length
 
   const record = `${roster.wins}-${roster.losses}${roster.ties ? `-${roster.ties}` : ''}`
 

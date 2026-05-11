@@ -17,7 +17,6 @@ import { Badge } from '@/components/ui/badge'
 import { RankingsToolbar } from '@/components/rankings/rankings-toolbar'
 import { ConsensusFlag } from '@/components/league/consensus-flag'
 import { computeMinAbsDeltaPercentileCutoff } from '@/lib/rankings/consensus-threshold'
-import { formatPosRankLabel } from '@/lib/rankings/neighbor-lists'
 import { readPlayers, readValues } from '@/server/functions/read-data'
 import type { LeagueUser, Roster } from '@/lib/db/schema'
 import { aggregatePlayerValues, type AggregatedPlayer } from '@/lib/rankings/player-metrics'
@@ -38,9 +37,14 @@ import {
 } from '@/lib/league/roster-index'
 import { getLeagueRosterSnapshot, type LeagueRosterSnapshot } from '@/server/functions/sync-sleeper'
 import { useUiSettings } from '@/lib/stores/ui-settings'
-import { wrapNormWithLaneTooltip, type TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
-
-const COLUMN_VISIBILITY_STORAGE_KEY = 'rankings-column-visibility'
+import type { TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
+import {
+  mergeRankingsTableColumnVisibility,
+  readRankingsGroupVisibilityFromStorage,
+  RANKINGS_GROUP_COLUMN_IDS,
+  writeRankingsGroupVisibilityToStorage,
+} from '@/lib/rankings/rankings-column-visibility'
+import { wideSpreadsheetDataColumnGroups } from '@/lib/rankings/wide-spreadsheet-data-columns'
 
 const ESTIMATE_ROW_HEIGHT_PX = 36
 const ROW_VIRTUAL_OVERSCAN = 32
@@ -125,79 +129,38 @@ function RankingsPage() {
   const setHideUnhighlighted = useUiSettings((s) => s.setRankingsHideUnhighlighted)
   const rankingsDefaultLeagueId = useUiSettings((s) => s.rankingsDefaultLeagueId)
   const consensusPercentile = useUiSettings((s) => s.consensusPercentile)
+  const rankingsHideRawValueColumns = useUiSettings((s) => s.rankingsHideRawValueColumns)
+  const rankingsHideSourceTierColumns = useUiSettings((s) => s.rankingsHideSourceTierColumns)
 
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'dynAvgNorm', desc: true }])
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'dynasty_avg_norm', desc: true }])
   const [globalFilter, setGlobalFilter] = useState('')
   const [positionFilter, setPositionFilter] = useState<string | null>(null)
   /** Rosters selected for highlight (multi-select). */
   const [highlightTeamIds, setHighlightTeamIds] = useState<number[]>([])
   const [highlightAvailable, setHighlightAvailable] = useState(false)
 
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
-
+  const [groupColumnVisibility, setGroupColumnVisibility] = useState<VisibilityState>(() =>
+    typeof window === 'undefined' ? {} : readRankingsGroupVisibilityFromStorage(),
+  )
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY)
-      if (!raw) return
-      const j = JSON.parse(raw) as Record<string, unknown>
-      const next: VisibilityState = {}
-      const keys = [
-        'dynasty_ktc',
-        'dynasty_dd',
-        'dynasty_fc',
-        'dynasty_avg',
-        'redraft_ktc',
-        'redraft_dd',
-        'redraft_fc',
-        'redraft_avg',
-      ] as const
-      for (const k of keys) {
-        if (typeof j[k] === 'boolean') next[k] = j[k] as boolean
-      }
-      if (Object.keys(next).length === 0) {
-        if (typeof j.dynasty === 'boolean') {
-          const on = j.dynasty as boolean
-          next.dynasty_ktc = on
-          next.dynasty_dd = on
-          next.dynasty_fc = on
-          next.dynasty_avg = on
-        }
-        if (typeof j.redraft === 'boolean') {
-          const on = j.redraft as boolean
-          next.redraft_ktc = on
-          next.redraft_dd = on
-          next.redraft_fc = on
-          next.redraft_avg = on
-        }
-      }
-      setColumnVisibility(next)
-    } catch {
-      /* ignore */
-    }
+    const loaded = readRankingsGroupVisibilityFromStorage()
+    if (Object.keys(loaded).length > 0) setGroupColumnVisibility(loaded)
   }, [])
 
   useEffect(() => {
-    try {
-      const ids = [
-        'dynasty_ktc',
-        'dynasty_dd',
-        'dynasty_fc',
-        'dynasty_avg',
-        'redraft_ktc',
-        'redraft_dd',
-        'redraft_fc',
-        'redraft_avg',
-      ] as const
-      const payload: Record<string, boolean> = {}
-      for (const id of ids) {
-        payload[id] = columnVisibility[id] !== false
-      }
-      localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, JSON.stringify(payload))
-    } catch {
-      /* ignore */
-    }
-  }, [columnVisibility])
+    writeRankingsGroupVisibilityToStorage(groupColumnVisibility)
+  }, [groupColumnVisibility])
+
+  const mergedColumnVisibility = useMemo(
+    () =>
+      mergeRankingsTableColumnVisibility(
+        groupColumnVisibility,
+        rankingsHideRawValueColumns,
+        rankingsHideSourceTierColumns,
+      ),
+    [groupColumnVisibility, rankingsHideRawValueColumns, rankingsHideSourceTierColumns],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined' || search.leagueId) return
@@ -248,8 +211,8 @@ function RankingsPage() {
   const clearHighlightTeams = useCallback(() => setHighlightTeamIds([]), [])
 
   const toggleDynastyColumns = useCallback(() => {
-    const ids = ['dynasty_ktc', 'dynasty_dd', 'dynasty_fc', 'dynasty_avg'] as const
-    setColumnVisibility((v) => {
+    const ids = ['dynasty_avg', 'dynasty_ktc', 'dynasty_dd', 'dynasty_fc'] as const
+    setGroupColumnVisibility((v) => {
       const anyOn = ids.some((id) => v[id] !== false)
       const next = !anyOn
       const u = { ...v }
@@ -259,8 +222,8 @@ function RankingsPage() {
   }, [])
 
   const toggleRedraftColumns = useCallback(() => {
-    const ids = ['redraft_ktc', 'redraft_dd', 'redraft_fc', 'redraft_avg'] as const
-    setColumnVisibility((v) => {
+    const ids = ['redraft_avg', 'redraft_ktc', 'redraft_dd', 'redraft_fc'] as const
+    setGroupColumnVisibility((v) => {
       const anyOn = ids.some((id) => v[id] !== false)
       const next = !anyOn
       const u = { ...v }
@@ -320,67 +283,7 @@ function RankingsPage() {
   ])
 
 
-  const tierCell = (val: number | null) =>
-    val !== null ? (
-      <Badge variant="secondary">T{val}</Badge>
-    ) : (
-      '-'
-    )
-
   const columns = useMemo((): ColumnDef<TablePlayer>[] => {
-    const normCell = (val: number | null, player: TablePlayer, columnLane: TableMetricLane) =>
-      wrapNormWithLaneTooltip(
-        metricLane,
-        columnLane,
-        player,
-        <span className="tabular-nums">{val !== null ? val.toLocaleString() : '-'}</span>,
-      )
-    const rawCell = (val: number | null) => (
-      <span className="text-muted-foreground">{val !== null ? val.toLocaleString() : '-'}</span>
-    )
-
-    const deltaPtsCell = (val: number | null) => {
-      if (val === null) return '-'
-      const text = val > 0 ? `+${val.toLocaleString()}` : val.toLocaleString()
-      return (
-        <span
-          className={cn(
-            val > 0 && 'text-emerald-600 dark:text-emerald-500',
-            val < 0 && 'text-rose-600 dark:text-rose-400',
-          )}
-        >
-          {text}
-        </span>
-      )
-    }
-
-    const rankCellDynKtc = (p: TablePlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-
-    const rankCellRdKtc = (p: TablePlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1.5 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-
-    const rankCellSimple = (p: TablePlayer, rank: number | null, posRank: number | null) => (
-      <div className="flex items-center gap-1 whitespace-nowrap">
-        <span>{rank !== null ? `#${rank}` : '—'}</span>
-        {posRank != null && rank !== null ? (
-          <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
-        ) : null}
-      </div>
-    )
-
     return [
       {
         accessorKey: 'name',
@@ -436,270 +339,44 @@ function RankingsPage() {
           <span className="text-muted-foreground">{(getValue() as string | null) ?? '—'}</span>
         ),
       },
-      {
-        id: 'dynasty_ktc',
-        header: 'KTC Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynKtcRank',
-            header: 'KTC #',
-            cell: ({ row, getValue }) =>
-              rankCellDynKtc(row.original, getValue() as number | null, row.original.dynKtcPosRank),
-          },
-          {
-            accessorKey: 'dynKtcValue',
-            header: 'KTC raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'dynKtcNorm',
-            header: 'KTC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          {
-            accessorKey: 'dynTierKtc',
-            header: 'T KTC',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'dynasty_dd',
-        header: 'Dynasty Daddy',
-        columns: [
-          {
-            accessorKey: 'dynDdRank',
-            header: 'DD #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.dynDdPosRank),
-          },
-          {
-            accessorKey: 'dynDdValue',
-            header: 'DD raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'dynDdNorm',
-            header: 'DD norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          {
-            accessorKey: 'dynTierDd',
-            header: 'T DD',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'dynDeltaNormDdVsKtc',
-            header: 'Δ pts DD',
-            cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'dynasty_fc',
-        header: 'FantasyCalc Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynFcRank',
-            header: 'FC #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.dynFcPosRank),
-          },
-          {
-            accessorKey: 'dynFcValue',
-            header: 'FC raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'dynFcNorm',
-            header: 'FC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'dynasty'),
-          },
-          {
-            accessorKey: 'dynTierFc',
-            header: 'T FC',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'dynDeltaNormFcVsKtc',
-            header: 'Δ pts',
-            cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'dynasty_avg',
-        header: 'Avg Dynasty',
-        columns: [
-          {
-            accessorKey: 'dynAvgNorm',
-            header: 'Avg',
-            cell: ({ row, getValue }) => {
-              const val = getValue() as number | null
-              const p = row.original
-              const pr = formatPosRankLabel(p.position, p.dynAvgPosRank)
-              const inner =
-                val === null ? (
-                  <span>-</span>
-                ) : (
-                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
-                    {p.dynAvgPosRank != null ? (
-                      <span className="text-muted-foreground text-xs">{pr}</span>
-                    ) : null}
-                  </span>
-                )
-              return wrapNormWithLaneTooltip(metricLane, 'dynasty', p, inner)
-            },
-          },
-          {
-            accessorKey: 'dynTierAvg',
-            header: 'Tier Σ',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'redraft_ktc',
-        header: 'KTC Redraft',
-        columns: [
-          {
-            accessorKey: 'rdKtcRank',
-            header: 'KTC #',
-            cell: ({ row, getValue }) =>
-              rankCellRdKtc(row.original, getValue() as number | null, row.original.rdKtcPosRank),
-          },
-          {
-            accessorKey: 'rdKtcValue',
-            header: 'KTC raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'rdKtcNorm',
-            header: 'KTC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          {
-            accessorKey: 'rdTierKtc',
-            header: 'T KTC',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'redraft_dd',
-        header: 'ADP Daddy',
-        columns: [
-          {
-            accessorKey: 'rdDdRank',
-            header: 'ADP #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.rdDdPosRank),
-          },
-          {
-            accessorKey: 'rdDdValue',
-            header: 'ADP raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'rdDdNorm',
-            header: 'ADP norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          {
-            accessorKey: 'rdTierDd',
-            header: 'T ADP',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'rdDeltaNormDdVsKtc',
-            header: 'Δ pts ADP',
-            cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'redraft_fc',
-        header: 'FantasyCalc Redraft',
-        columns: [
-          {
-            accessorKey: 'rdFcRank',
-            header: 'FC #',
-            cell: ({ row, getValue }) =>
-              rankCellSimple(row.original, getValue() as number | null, row.original.rdFcPosRank),
-          },
-          {
-            accessorKey: 'rdFcValue',
-            header: 'FC raw',
-            cell: ({ getValue }) => rawCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'rdFcNorm',
-            header: 'FC norm',
-            cell: ({ row, getValue }) => normCell(getValue() as number | null, row.original, 'redraft'),
-          },
-          {
-            accessorKey: 'rdTierFc',
-            header: 'T FC',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-          {
-            accessorKey: 'rdDeltaNormFcVsKtc',
-            header: 'Δ pts',
-            cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
-          },
-        ],
-      },
-      {
-        id: 'redraft_avg',
-        header: 'Avg Redraft',
-        columns: [
-          {
-            accessorKey: 'rdAvgNorm',
-            header: 'Avg',
-            cell: ({ row, getValue }) => {
-              const val = getValue() as number | null
-              const p = row.original
-              const pr = formatPosRankLabel(p.position, p.rdAvgPosRank)
-              const inner =
-                val === null ? (
-                  <span>-</span>
-                ) : (
-                  <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-                    <span className="font-semibold tabular-nums">{val.toLocaleString()}</span>
-                    {p.rdAvgPosRank != null ? (
-                      <span className="text-muted-foreground text-xs">{pr}</span>
-                    ) : null}
-                  </span>
-                )
-              return wrapNormWithLaneTooltip(metricLane, 'redraft', p, inner)
-            },
-          },
-          {
-            accessorKey: 'rdTierAvg',
-            header: 'Tier Σ',
-            cell: ({ getValue }) => tierCell(getValue() as number | null),
-          },
-        ],
-      },
+      ...(wideSpreadsheetDataColumnGroups({ metricLane }) as ColumnDef<TablePlayer>[]),
     ]
 
   }, [dynConsensusCutoff, metricLane, rdConsensusCutoff, search.leagueId])
 
+  const onColumnVisibilityChange = useCallback(
+    (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
+      setGroupColumnVisibility((prevGroups) => {
+        const prevMerged = mergeRankingsTableColumnVisibility(
+          prevGroups,
+          rankingsHideRawValueColumns,
+          rankingsHideSourceTierColumns,
+        )
+        const nextFull = typeof updater === 'function' ? updater(prevMerged) : updater
+        const nextGroups: VisibilityState = { ...prevGroups }
+        for (const id of RANKINGS_GROUP_COLUMN_IDS) {
+          if (id in nextFull) nextGroups[id] = nextFull[id]
+        }
+        return nextGroups
+      })
+    },
+    [rankingsHideRawValueColumns, rankingsHideSourceTierColumns],
+  )
+
   const table = useReactTable({
     data: filteredData,
     columns,
-    state: { sorting, globalFilter, columnVisibility },
+    state: { sorting, globalFilter, columnVisibility: mergedColumnVisibility },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
-    onColumnVisibilityChange: setColumnVisibility,
+    onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   })
 
   const rowModelRows = table.getRowModel().rows
-  const leafColumnCount = table.getAllLeafColumns().length
+  const leafColumnCount = table.getVisibleLeafColumns().length
 
   const rowVirtualizer = useVirtualizer({
     count: rowModelRows.length,
@@ -715,11 +392,11 @@ function RankingsPage() {
       ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
       : 0
 
-  const dynastyGroupVisible = ['dynasty_ktc', 'dynasty_dd', 'dynasty_fc', 'dynasty_avg'].some(
-    (id) => columnVisibility[id] !== false,
+  const dynastyGroupVisible = ['dynasty_avg', 'dynasty_ktc', 'dynasty_dd', 'dynasty_fc'].some(
+    (id) => groupColumnVisibility[id] !== false,
   )
-  const redraftGroupVisible = ['redraft_ktc', 'redraft_dd', 'redraft_fc', 'redraft_avg'].some(
-    (id) => columnVisibility[id] !== false,
+  const redraftGroupVisible = ['redraft_avg', 'redraft_ktc', 'redraft_dd', 'redraft_fc'].some(
+    (id) => groupColumnVisibility[id] !== false,
   )
 
   return (

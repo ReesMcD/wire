@@ -7,7 +7,7 @@ import {
   LEAGUE_STORAGE_EVENT,
 } from '@/lib/league-storage'
 
-/** Top-nav link to waiver for the current league id in shared storage (same source as League refresh). */
+/** Top-nav link to waivers for the current league id in shared storage (same source as League refresh). */
 export function LeagueWaiverNavLink() {
   const [leagueId, setLeagueId] = React.useState<string | null>(null)
   const pathname = useRouterState({ select: (s) => s.location.pathname })

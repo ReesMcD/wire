@@ -12,14 +12,17 @@ export interface LeagueRosterSlotConsensusCtx {
 }
 
 export function LeagueRosterSlotTooltipBody({
+  slotLabel,
   player,
   consensus,
 }: {
+  slotLabel: string
   player: AggregatedPlayer
   consensus: LeagueRosterSlotConsensusCtx
 }) {
   return (
     <div className="max-w-sm space-y-3 text-xs">
+      <p className="font-medium leading-snug text-foreground">{slotLabel}</p>
       <div className="space-y-2">
         <ActiveLaneNormTooltip player={player} lane="dynasty" />
         <ConsensusIndicatorLine

@@ -76,13 +76,15 @@ function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   return u?.teamName ?? u?.displayName ?? `Roster ${roster.rosterId}`
 }
 
-function rosterPlayerMetrics(
+/** Redraft power excludes picks; dynasty includes pick rows when valued in `byId`. */
+function rosterMetricsForPowerLane(
   playerIds: string[],
   byId: Map<string, AggregatedPlayer>,
+  lane: MetricLane,
 ): AggregatedPlayer[] {
   const out: AggregatedPlayer[] = []
   for (const id of playerIds) {
-    if (id.startsWith('pick:')) continue
+    if (lane === 'redraft' && id.startsWith('pick:')) continue
     const m = byId.get(id)
     if (m) out.push(m)
   }
@@ -117,17 +119,23 @@ function leagueOverviewNormSourceLabel(source: NormLaneSource, metricLane: Metri
 }
 
 function RosterSlotNormCell({
-  displayNorm,
+  displayNormDyn,
+  displayNormRd,
+  slotLabel,
   player,
   consensus,
 }: {
-  displayNorm: number | null
+  displayNormDyn: number | null
+  displayNormRd: number | null
+  slotLabel: string
   player: AggregatedPlayer | undefined
   consensus: LeagueRosterSlotConsensusCtx
 }) {
   const inner = (
-    <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
-      {displayNorm != null ? displayNorm.toLocaleString() : '—'}
+    <span className="text-muted-foreground inline-flex shrink-0 items-baseline gap-1.5 tabular-nums text-xs">
+      <span>{displayNormDyn != null ? displayNormDyn.toLocaleString() : '—'}</span>
+      <span className="text-muted-foreground/70">/</span>
+      <span>{displayNormRd != null ? displayNormRd.toLocaleString() : '—'}</span>
     </span>
   )
   if (!player) return inner
@@ -139,7 +147,7 @@ function RosterSlotNormCell({
         </span>
       </TooltipTrigger>
       <TooltipContent side="left" className="max-w-sm">
-        <LeagueRosterSlotTooltipBody player={player} consensus={consensus} />
+        <LeagueRosterSlotTooltipBody slotLabel={slotLabel} player={player} consensus={consensus} />
       </TooltipContent>
     </Tooltip>
   )
@@ -183,10 +191,6 @@ function LeagueOverviewPage() {
   const consensusPercentileSetting = useUiSettings((s) => s.consensusPercentile)
   const consensusThresholdMode = useUiSettings((s) => s.consensusThresholdMode)
   const consensusMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
-  const consensusCutoffLane = useMemo(
-    () => computeMinAbsDeltaPercentileCutoff(aggregated, metricLane, consensusPercentileSetting),
-    [aggregated, metricLane, consensusPercentileSetting],
-  )
   const dynConsensusCutoff = useMemo(
     () => computeMinAbsDeltaPercentileCutoff(aggregated, 'dynasty', consensusPercentileSetting),
     [aggregated, consensusPercentileSetting],
@@ -219,7 +223,7 @@ function LeagueOverviewPage() {
 
   const teamRows = useMemo(() => {
     const perTeam = leagueSnapshot.rosters.map((roster) => {
-      const fullMetrics = rosterPlayerMetrics(roster.playerIds, bySleeperId)
+      const fullMetrics = rosterMetricsForPowerLane(roster.playerIds, bySleeperId, metricLane)
       const depthMap = depthTierByPlayerId(fullMetrics, metricLane)
       const starters = selectValueStarters(fullMetrics, metricLane)
       const starterIds = new Set(starters.map((s) => s.sleeperId))
@@ -240,6 +244,7 @@ function LeagueOverviewPage() {
       const rawTe = posSumLane(pool, metricLane, 'TE', avgLane)
 
       const rosterSlots = roster.playerIds.map((slotId) => {
+        const src = leagueOverviewDisplayNormSource
         if (slotId.startsWith('pick:')) {
           const m = bySleeperId.get(slotId)
           return {
@@ -248,41 +253,44 @@ function LeagueOverviewPage() {
             name: m?.name ?? formatPickSlotId(slotId),
             position: 'PICK' as string | null,
             depthTier: 'bench' as DepthTier,
-            displayNorm: m ? normByLaneSource(m, metricLane, leagueOverviewDisplayNormSource) : null,
-            deltaFc: null as number | null,
-            deltaDd: null as number | null,
+            displayNormDyn: m ? normByLaneSource(m, 'dynasty', src) : null,
+            displayNormRd: m ? normByLaneSource(m, 'redraft', src) : null,
+            sortNormDyn: m ? normByLaneSource(m, 'dynasty', src) : null,
+            sortNormRd: m ? normByLaneSource(m, 'redraft', src) : null,
           }
         }
         const m = bySleeperId.get(slotId)
         const pl = players.find((p) => p.playerId === slotId)
         const depthTier: DepthTier = m ? (depthMap.get(m.sleeperId) ?? 'bench') : 'bench'
-        const deltaFc = m
-          ? metricLane === 'dynasty'
-            ? m.dynDeltaNormFcVsKtc
-            : m.rdDeltaNormFcVsKtc
-          : null
-        const deltaDd = m
-          ? metricLane === 'dynasty'
-            ? m.dynDeltaNormDdVsKtc
-            : m.rdDeltaNormDdVsKtc
-          : null
         return {
           slotId,
           kind: 'player' as const,
           name: m?.name ?? (pl ? `${pl.firstName} ${pl.lastName}` : slotId),
           position: m?.position ?? pl?.position ?? null,
           depthTier,
-          displayNorm: m ? normByLaneSource(m, metricLane, leagueOverviewDisplayNormSource) : null,
-          deltaFc,
-          deltaDd,
+          displayNormDyn: m ? normByLaneSource(m, 'dynasty', src) : null,
+          displayNormRd: m ? normByLaneSource(m, 'redraft', src) : null,
+          sortNormDyn: m ? normByLaneSource(m, 'dynasty', src) : null,
+          sortNormRd: m ? normByLaneSource(m, 'redraft', src) : null,
         }
       })
 
       const rosterSlotsSorted = [...rosterSlots].sort((a, b) => {
-        if (a.displayNorm == null && b.displayNorm == null) return a.slotId.localeCompare(b.slotId)
-        if (a.displayNorm == null) return 1
-        if (b.displayNorm == null) return -1
-        if (b.displayNorm !== a.displayNorm) return b.displayNorm - a.displayNorm
+        const aDead = a.sortNormDyn == null && a.sortNormRd == null
+        const bDead = b.sortNormDyn == null && b.sortNormRd == null
+        if (aDead && bDead) return a.slotId.localeCompare(b.slotId)
+        if (aDead) return 1
+        if (bDead) return -1
+        const ad = a.sortNormDyn
+        const bd = b.sortNormDyn
+        if (ad != null && bd != null && bd !== ad) return bd - ad
+        if (ad != null && bd == null) return -1
+        if (ad == null && bd != null) return 1
+        const ar = a.sortNormRd
+        const br = b.sortNormRd
+        if (ar != null && br != null && br !== ar) return br - ar
+        if (ar != null && br == null) return -1
+        if (ar == null && br != null) return 1
         return a.name.localeCompare(b.name)
       })
 
@@ -506,7 +514,7 @@ function LeagueOverviewPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground text-sm">Roster list value:</span>
+        <span className="text-muted-foreground text-sm">Sort roster by (dynasty, then redraft):</span>
         {(['avg', 'ktc', 'fc', 'dd'] as const).map((src) => {
           const label =
             src === 'avg'
@@ -793,9 +801,9 @@ function LeagueOverviewPage() {
                       })}
                     </div>
                     <CardDescription className="text-xs">
-                      Pool: {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · Sorted by{' '}
-                      {leagueOverviewNormSourceLabel(leagueOverviewDisplayNormSource, metricLane)} ({lane}) · “—” = no
-                      value
+                      Pool: {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · Values show
+                      dynasty / redraft ({leagueOverviewNormSourceLabel(leagueOverviewDisplayNormSource, 'dynasty')}); sort
+                      uses dynasty then redraft · “—” = no value
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-0 border-t border-border pt-3">
@@ -812,7 +820,18 @@ function LeagueOverviewPage() {
                           )}
                         >
                           <div className="min-w-0 flex-1">
-                            <span className="font-medium">{slot.name}</span>
+                            {slot.kind === 'player' ? (
+                              <Link
+                                to="/player/$sleeperId"
+                                params={{ sleeperId: slot.slotId }}
+                                search={{ leagueId }}
+                                className="font-medium hover:underline"
+                              >
+                                {slot.name}
+                              </Link>
+                            ) : (
+                              <span className="font-medium">{slot.name}</span>
+                            )}
                             {slot.position ? (
                               <Badge variant="outline" className="ml-2 align-middle text-[10px]">
                                 {slot.position}
@@ -831,18 +850,35 @@ function LeagueOverviewPage() {
                                 Bench
                               </Badge>
                             )}
-                            {slot.kind === 'player' ? (
-                              <ConsensusFlag
-                                className="ml-1.5"
-                                lane={metricLane}
-                                minAbsDeltaPercentileCutoff={consensusCutoffLane}
-                                deltaFc={slot.deltaFc}
-                                deltaDd={slot.deltaDd}
-                              />
-                            ) : null}
+                            {slot.kind === 'player' ? (() => {
+                              const m = bySleeperId.get(slot.slotId)
+                              if (!m) return null
+                              return (
+                                <>
+                                  <ConsensusFlag
+                                    className="ml-1.5"
+                                    lane="dynasty"
+                                    minAbsDeltaPercentileCutoff={dynConsensusCutoff}
+                                    deltaFc={m.dynDeltaNormFcVsKtc}
+                                    deltaDd={m.dynDeltaNormDdVsKtc}
+                                    laneLabel="Dyn"
+                                  />
+                                  <ConsensusFlag
+                                    className="ml-1.5"
+                                    lane="redraft"
+                                    minAbsDeltaPercentileCutoff={rdConsensusCutoff}
+                                    deltaFc={m.rdDeltaNormFcVsKtc}
+                                    deltaDd={m.rdDeltaNormDdVsKtc}
+                                    laneLabel="Rd"
+                                  />
+                                </>
+                              )
+                            })() : null}
                           </div>
                           <RosterSlotNormCell
-                            displayNorm={slot.displayNorm}
+                            slotLabel={slot.name}
+                            displayNormDyn={slot.displayNormDyn}
+                            displayNormRd={slot.displayNormRd}
                             player={bySleeperId.get(slot.slotId)}
                             consensus={rosterSlotConsensus}
                           />

@@ -136,6 +136,10 @@ export function SettingsForm({ className }: { className?: string }) {
   const setSimilarityIncludePicks = useUiSettings((s) => s.setSimilarityIncludePicks)
   const srcVis = useUiSettings((s) => s.rankingsSourceVisibility)
   const setSrcVis = useUiSettings((s) => s.setRankingsSourceVisibility)
+  const rankingsHideRawValueColumns = useUiSettings((s) => s.rankingsHideRawValueColumns)
+  const setRankingsHideRawValueColumns = useUiSettings((s) => s.setRankingsHideRawValueColumns)
+  const rankingsHideSourceTierColumns = useUiSettings((s) => s.rankingsHideSourceTierColumns)
+  const setRankingsHideSourceTierColumns = useUiSettings((s) => s.setRankingsHideSourceTierColumns)
   const resetAll = useUiSettings((s) => s.resetAll)
 
   const pool = poolLabel(tierIncludes)
@@ -428,6 +432,34 @@ export function SettingsForm({ className }: { className?: string }) {
             onChange={(redraft) => setSrcVis((prev) => ({ ...prev, redraft }))}
           />
           <p className="text-muted-foreground text-xs leading-relaxed">{explainSettingsLaneSourceToggles()}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-muted-foreground text-sm">Hide raw value columns (KTC/FC/DD raw)</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant={rankingsHideRawValueColumns ? 'default' : 'outline'}
+              onClick={() => setRankingsHideRawValueColumns(!rankingsHideRawValueColumns)}
+            >
+              {rankingsHideRawValueColumns ? 'On' : 'Off'}
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Applies to the Rankings spreadsheet and team roster table. Norms, ranks, and deltas stay visible.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label className="text-muted-foreground text-sm">Hide per-source tier badges (T KTC, T DD, …)</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant={rankingsHideSourceTierColumns ? 'default' : 'outline'}
+              onClick={() => setRankingsHideSourceTierColumns(!rankingsHideSourceTierColumns)}
+            >
+              {rankingsHideSourceTierColumns ? 'On' : 'Off'}
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Hides source tier columns only. Avg “Tier Σ” under each lane’s average block stays visible.
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <Label className="text-muted-foreground text-sm">Hide pick rows (rankings / roster lists)</Label>
             <Button

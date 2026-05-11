@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useRef, useState } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -13,6 +12,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageSubheader } from '@/components/ui/page-subheader'
@@ -34,8 +40,6 @@ import {
   laneLabel,
 } from '@/lib/rankings/explain'
 
-const ESTIMATE_ROW_HEIGHT_PX = 36
-
 function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   const u = users.find((x) => x.userId === roster.ownerId)
   return u?.teamName ?? u?.displayName ?? `Roster ${roster.rosterId}`
@@ -47,7 +51,6 @@ export const Route = createFileRoute('/league/$leagueId/waiver')({
 
 function WaiverPage() {
   const { leagueId, players, values, leagueSnapshot } = useLeagueRoute()
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   const metricLane = useUiSettings((s) => s.metricLane)
   const setMetricLane = useUiSettings((s) => s.setMetricLane)
@@ -57,7 +60,8 @@ function WaiverPage() {
   const [globalFilter, setGlobalFilter] = useState('')
   const [positionFilter, setPositionFilter] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'avgNorm', desc: true }])
-  const [highlightTeamIds, setHighlightTeamIds] = useState<number[]>([])
+  /** When set, that roster’s players are listed with FAs for side‑by‑side comparison. */
+  const [compareRosterId, setCompareRosterId] = useState<number | null>(null)
 
   const aggregated = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
@@ -65,10 +69,16 @@ function WaiverPage() {
   )
 
   const consensusPercentileSetting = useUiSettings((s) => s.consensusPercentile)
-  const consensusCutoffLane = useMemo(
-    () => computeMinAbsDeltaPercentileCutoff(aggregated, metricLane, consensusPercentileSetting),
-    [aggregated, metricLane, consensusPercentileSetting],
+  const dynConsensusCutoff = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregated, 'dynasty', consensusPercentileSetting),
+    [aggregated, consensusPercentileSetting],
   )
+  const rdConsensusCutoff = useMemo(
+    () => computeMinAbsDeltaPercentileCutoff(aggregated, 'redraft', consensusPercentileSetting),
+    [aggregated, consensusPercentileSetting],
+  )
+
+  const bySleeperId = useMemo(() => new Map(aggregated.map((p) => [p.sleeperId, p])), [aggregated])
 
   const faPlayers = useMemo(() => {
     const index = buildLeagueRosterIndex(leagueSnapshot.rosters)
@@ -84,13 +94,30 @@ function WaiverPage() {
     return rows
   }, [faPlayers, positionFilter])
 
-  const toggleHighlightTeam = (rosterId: number) => {
-    setHighlightTeamIds((prev) =>
-      prev.includes(rosterId) ? prev.filter((x) => x !== rosterId) : [...prev, rosterId],
-    )
-  }
+  const rosterSpotlightPlayers = useMemo(() => {
+    if (compareRosterId == null) return [] as { p: AggregatedPlayer; label: string }[]
+    const r = leagueSnapshot.rosters.find((x) => x.rosterId === compareRosterId)
+    if (!r) return []
+    const label = rosterDisplayName(r, leagueSnapshot.users)
+    const out: { p: AggregatedPlayer; label: string }[] = []
+    for (const sid of r.playerIds) {
+      if (sid.startsWith('pick:')) continue
+      const p = bySleeperId.get(sid)
+      if (!p || p.position === 'PICK') continue
+      if (positionFilter && p.position !== positionFilter) continue
+      out.push({ p, label })
+    }
+    return out
+  }, [bySleeperId, compareRosterId, leagueSnapshot.rosters, leagueSnapshot.users, positionFilter])
+
+  const waiverBoardTagged = useMemo(() => {
+    const faRows = filteredFa.map((p) => ({ p, label: 'FA' as string }))
+    if (rosterSpotlightPlayers.length === 0) return faRows
+    return [...rosterSpotlightPlayers, ...faRows]
+  }, [filteredFa, rosterSpotlightPlayers])
 
   type FaRow = AggregatedPlayer & {
+    poolSource: string
     ktcNorm: number | null
     fcNorm: number | null
     ddNorm: number | null
@@ -101,7 +128,7 @@ function WaiverPage() {
   }
 
   const tableRows = useMemo<FaRow[]>(() => {
-    return filteredFa.map((p) => {
+    return waiverBoardTagged.map(({ p, label }) => {
       const ktc = metricLane === 'dynasty' ? p.dynKtcNorm : p.rdKtcNorm
       const fc = metricLane === 'dynasty' ? p.dynFcNorm : p.rdFcNorm
       const dd = metricLane === 'dynasty' ? p.dynDdNorm : p.rdDdNorm
@@ -111,6 +138,7 @@ function WaiverPage() {
       const dAvg = avg != null && ktc != null ? avg - ktc : null
       return {
         ...p,
+        poolSource: label,
         ktcNorm: ktc,
         fcNorm: fc,
         ddNorm: dd,
@@ -120,7 +148,7 @@ function WaiverPage() {
         deltaAvg: dAvg,
       }
     })
-  }, [filteredFa, metricLane])
+  }, [metricLane, waiverBoardTagged])
 
   const numCell = (val: number | null) =>
     val != null ? <span className="tabular-nums">{val.toLocaleString()}</span> : <span className="text-muted-foreground">—</span>
@@ -156,20 +184,44 @@ function WaiverPage() {
         accessorKey: 'name',
         header: 'Player',
         cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{row.original.name}</span>
+          <div className="flex items-center gap-2" title={row.original.name}>
+            <Link
+              to="/player/$sleeperId"
+              params={{ sleeperId: row.original.sleeperId }}
+              search={{ leagueId }}
+              className="font-medium hover:underline"
+            >
+              {row.original.name}
+            </Link>
             {row.original.position && (
               <Badge variant="outline" className="text-xs">
                 {row.original.position}
               </Badge>
             )}
             <ConsensusFlag
-              lane={metricLane}
-              minAbsDeltaPercentileCutoff={consensusCutoffLane}
-              deltaFc={row.original.deltaFc}
-              deltaDd={row.original.deltaDd}
+              lane="dynasty"
+              minAbsDeltaPercentileCutoff={dynConsensusCutoff}
+              deltaFc={row.original.dynDeltaNormFcVsKtc}
+              deltaDd={row.original.dynDeltaNormDdVsKtc}
+              laneLabel="Dyn"
+              className="shrink-0"
+            />
+            <ConsensusFlag
+              lane="redraft"
+              minAbsDeltaPercentileCutoff={rdConsensusCutoff}
+              deltaFc={row.original.rdDeltaNormFcVsKtc}
+              deltaDd={row.original.rdDeltaNormDdVsKtc}
+              laneLabel="Rd"
+              className="shrink-0"
             />
           </div>
+        ),
+      },
+      {
+        accessorKey: 'poolSource',
+        header: 'Pool',
+        cell: ({ getValue }) => (
+          <span className="text-muted-foreground text-xs">{(getValue() as string) ?? '—'}</span>
         ),
       },
       {
@@ -218,7 +270,7 @@ function WaiverPage() {
         cell: ({ getValue }) => deltaCell(getValue() as number | null),
       },
     ],
-    [consensusCutoffLane, metricLane],
+    [dynConsensusCutoff, leagueId, rdConsensusCutoff],
   )
 
   const table = useReactTable({
@@ -234,29 +286,24 @@ function WaiverPage() {
   })
 
   const rowModelRows = table.getRowModel().rows
-  const leafColumnCount = table.getAllLeafColumns().length
-
-  const rowVirtualizer = useVirtualizer({
-    count: rowModelRows.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ESTIMATE_ROW_HEIGHT_PX,
-    overscan: 12,
-  })
-
-  const virtualRows = rowVirtualizer.getVirtualItems()
-  const padTop = virtualRows.length > 0 ? virtualRows[0].start : 0
-  const padBottom =
-    virtualRows.length > 0
-      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
-      : 0
+  const leafColumnCount = table.getVisibleLeafColumns().length
 
   const positions = ['QB', 'RB', 'WR', 'TE']
-  const rosterOptions = leagueSnapshot.rosters
+  const rosterOptionsSorted = useMemo(() => {
+    return [...leagueSnapshot.rosters].sort((a, b) =>
+      rosterDisplayName(a, leagueSnapshot.users).localeCompare(
+        rosterDisplayName(b, leagueSnapshot.users),
+        undefined,
+        { sensitivity: 'base' },
+      ),
+    )
+  }, [leagueSnapshot.rosters, leagueSnapshot.users])
   const lane = laneLabel(metricLane)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-4 sm:px-4">
-      <PageSubheader className="mx-[-0.75rem] sm:mx-[-1rem]">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-4 sm:px-4">
+      <PageSubheader className="mx-[-0.75rem] shrink-0 sm:mx-[-1rem]">
+        <span className="shrink-0 text-sm font-medium">Waiver</span>
         <span className="text-muted-foreground shrink-0 text-xs sm:text-sm">Metric</span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -328,30 +375,34 @@ function WaiverPage() {
             lane={metricLane}
             percentileReferencePlayers={aggregated}
             topN={25}
+            leagueId={leagueId}
           />
         </CardContent>
       </Card>
 
-      <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3">
-        <p className="text-muted-foreground text-xs font-medium">Highlight</p>
-        <div className="flex flex-wrap gap-2">
-          {rosterOptions.map((r) => (
-            <Button
-              key={r.rosterId}
-              type="button"
-              size="sm"
-              className="min-h-9 max-w-[220px] truncate"
-              variant={highlightTeamIds.includes(r.rosterId) ? 'default' : 'outline'}
-              title={`${rosterDisplayName(r, leagueSnapshot.users)} (${r.rosterId})`}
-              onClick={() => toggleHighlightTeam(r.rosterId)}
-            >
-              {rosterDisplayName(r, leagueSnapshot.users)}
-            </Button>
-          ))}
+      <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <p className="text-muted-foreground text-xs font-medium">Compare to roster</p>
+          <p className="text-muted-foreground text-xs">
+            Pick a team to list its players with free agents in the table below (same search and position filters).
+          </p>
         </div>
-        <p className="text-muted-foreground text-xs">
-          Team toggles persist for parity with Rankings; on the FA-only list they’re cosmetic.
-        </p>
+        <Select
+          value={compareRosterId == null ? 'none' : String(compareRosterId)}
+          onValueChange={(v) => setCompareRosterId(v === 'none' ? null : Number(v))}
+        >
+          <SelectTrigger className="h-9 w-full min-w-[12rem] sm:w-[min(100%,20rem)]">
+            <SelectValue placeholder="Choose roster" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Free agents only</SelectItem>
+            {rosterOptionsSorted.map((r) => (
+              <SelectItem key={r.rosterId} value={String(r.rosterId)}>
+                {rosterDisplayName(r, leagueSnapshot.users)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-3">
@@ -384,9 +435,9 @@ function WaiverPage() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border">
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full caption-bottom text-sm">
+      <div className="shrink-0 overflow-hidden rounded-md border border-border">
+        <div className="spreadsheet-scroll overflow-x-auto">
+          <table className="w-full min-w-[720px] caption-bottom text-sm spreadsheet-table">
             <TableHeader className="[&_tr]:border-0">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id} className="border-0 hover:bg-transparent data-[state=selected]:bg-transparent">
@@ -408,27 +459,22 @@ function WaiverPage() {
               ))}
             </TableHeader>
             <TableBody>
-              {padTop > 0 && (
-                <TableRow className="border-0 hover:bg-transparent data-[state=selected]:bg-transparent">
-                  <TableCell colSpan={leafColumnCount} className="p-0" style={{ height: padTop }} />
+              {rowModelRows.length === 0 ? (
+                <TableRow className="border-0">
+                  <TableCell colSpan={leafColumnCount} className="h-24 text-center text-muted-foreground">
+                    No rows match the current filters.
+                  </TableCell>
                 </TableRow>
-              )}
-              {virtualRows.map((vr) => {
-                const row = rowModelRows[vr.index]
-                return (
-                  <TableRow key={row.id} className="border-0" style={{ height: vr.size }} data-index={vr.index}>
+              ) : (
+                rowModelRows.map((row) => (
+                  <TableRow key={row.id} className="border-0">
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="whitespace-nowrap">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
                   </TableRow>
-                )
-              })}
-              {padBottom > 0 && (
-                <TableRow className="border-0 hover:bg-transparent data-[state=selected]:bg-transparent">
-                  <TableCell colSpan={leafColumnCount} className="p-0" style={{ height: padBottom }} />
-                </TableRow>
+                ))
               )}
             </TableBody>
           </table>

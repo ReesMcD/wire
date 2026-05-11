@@ -79,6 +79,10 @@ interface UiSettingsState {
   rankingsDefaultLeagueId: string
   /** Which norm source the league overview roster list uses for its per-slot number. */
   leagueOverviewDisplayNormSource: NormLaneSource
+  /** Rankings / team table: hide KTC/FC/DD “raw” value columns (not avg). */
+  rankingsHideRawValueColumns: boolean
+  /** Rankings / team table: hide per-source tier badges (T KTC, etc.); avg “Tier Σ” stays visible. */
+  rankingsHideSourceTierColumns: boolean
 
   setMetricLane: (v: MetricLane) => void
   setNormMode: (v: NormMode) => void
@@ -106,6 +110,8 @@ interface UiSettingsState {
   setPlayerFiltersCollapsed: (v: boolean) => void
   setRankingsDefaultLeagueId: (v: string) => void
   setLeagueOverviewDisplayNormSource: (v: NormLaneSource) => void
+  setRankingsHideRawValueColumns: (v: boolean) => void
+  setRankingsHideSourceTierColumns: (v: boolean) => void
   resetAll: () => void
 }
 
@@ -135,6 +141,8 @@ const DEFAULTS: Omit<
   | 'setPlayerFiltersCollapsed'
   | 'setRankingsDefaultLeagueId'
   | 'setLeagueOverviewDisplayNormSource'
+  | 'setRankingsHideRawValueColumns'
+  | 'setRankingsHideSourceTierColumns'
   | 'resetAll'
 > = {
   metricLane: 'dynasty',
@@ -161,6 +169,8 @@ const DEFAULTS: Omit<
   playerFiltersCollapsed: false,
   rankingsDefaultLeagueId: '',
   leagueOverviewDisplayNormSource: 'avg',
+  rankingsHideRawValueColumns: false,
+  rankingsHideSourceTierColumns: false,
 }
 
 const LEGACY_KEYS = {
@@ -330,6 +340,11 @@ function migratePersistedToV3(raw: unknown): Partial<UiSettingsState> {
     out.leagueOverviewDisplayNormSource = disp
   }
 
+  if (typeof s.rankingsHideRawValueColumns === 'boolean') out.rankingsHideRawValueColumns = s.rankingsHideRawValueColumns
+  if (typeof s.rankingsHideSourceTierColumns === 'boolean') {
+    out.rankingsHideSourceTierColumns = s.rankingsHideSourceTierColumns
+  }
+
   return out
 }
 
@@ -380,11 +395,13 @@ export const useUiSettings = create<UiSettingsState>()(
       setPlayerFiltersCollapsed: (v) => set({ playerFiltersCollapsed: v }),
       setRankingsDefaultLeagueId: (v) => set({ rankingsDefaultLeagueId: v.trim() }),
       setLeagueOverviewDisplayNormSource: (v) => set({ leagueOverviewDisplayNormSource: v }),
+      setRankingsHideRawValueColumns: (v) => set({ rankingsHideRawValueColumns: v }),
+      setRankingsHideSourceTierColumns: (v) => set({ rankingsHideSourceTierColumns: v }),
       resetAll: () => set({ ...DEFAULTS }),
     }),
     {
       name: 'fantasy-ui-settings',
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted, fromVersion) => {
@@ -445,6 +462,11 @@ export const useUiSettings = create<UiSettingsState>()(
           else if (m !== 'percentile' && m !== 'agreement') merged.consensusThresholdMode = 'agreement'
         }
 
+        if (v < 8) {
+          merged.rankingsHideRawValueColumns = merged.rankingsHideRawValueColumns ?? false
+          merged.rankingsHideSourceTierColumns = merged.rankingsHideSourceTierColumns ?? false
+        }
+
         const partial = migratePersistedToV3(merged)
         return { ...DEFAULTS, ...partial } as UiSettingsState
       },
@@ -473,6 +495,8 @@ export const useUiSettings = create<UiSettingsState>()(
         playerFiltersCollapsed: state.playerFiltersCollapsed,
         rankingsDefaultLeagueId: state.rankingsDefaultLeagueId,
         leagueOverviewDisplayNormSource: state.leagueOverviewDisplayNormSource,
+        rankingsHideRawValueColumns: state.rankingsHideRawValueColumns,
+        rankingsHideSourceTierColumns: state.rankingsHideSourceTierColumns,
       }),
       merge: (persistedState, currentState) => {
         const persisted = migratePersistedToV3(persistedState)
