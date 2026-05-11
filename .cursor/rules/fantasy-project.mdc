@@ -2,7 +2,7 @@
 
 ## Project Context
 
-This is a fantasy football data aggregator built with TanStack Start. It syncs league data from Sleeper and player values from FantasyCalc (API) and KeepTradeCut (Playwright scraping).
+This is a fantasy football data aggregator built with TanStack Start, deployed on Vercel. It syncs league data from Sleeper and player values from FantasyCalc (API), KeepTradeCut (Playwright scraping), and Dynasty Daddy (CSV). All data is persisted in Neon serverless Postgres.
 
 ## Architecture Conventions
 
@@ -15,44 +15,52 @@ This is a fantasy football data aggregator built with TanStack Start. It syncs l
 ### Data Source Pattern
 - Each source lives in `app/lib/sources/{source-name}/` with `types.ts`, `client.ts` (or `scraper.ts`), and `provider.ts`.
 - Providers implement the `DataSourceProvider` interface from `app/lib/sources/types.ts`.
-- Server functions in `app/server/functions/` fetch and normalize data but do NOT persist — they return data to the client.
+- Server functions in `app/server/functions/` fetch, normalize, and persist data directly to Neon.
 
-### Data Persistence (TanStack DB + SQLite/OPFS)
-- Client-side persistence using `@tanstack/db` with `@tanstack/browser-db-sqlite-persistence`.
-- Collections defined in `app/lib/db/collections.ts` — `players`, `values`, `syncMetadata`, `unresolvedPlayers`.
-- Persistence layer in `app/lib/db/persistence.ts` — creates OPFS-backed SQLite database.
-- All data is stored in the browser (durable across sessions via OPFS).
-- No server-side data storage. The `data/` directory no longer exists.
+### Data Persistence (Neon Postgres)
+- All application data lives in Neon serverless Postgres (`@neondatabase/serverless`).
+- Connection configured via `DATABASE_URL` environment variable.
+- Tables: `players`, `player_values`, `sync_metadata`.
+- Schema defined in `scripts/migrations/001_initial_schema.sql`.
+- Zod schemas in `app/lib/db/schema.ts` define TypeScript types.
+- Connection factory in `app/lib/db/connection.ts`.
+- Writes use batched INSERT ... ON CONFLICT DO UPDATE (upsert semantics).
+- Reads use simple SELECT queries via tagged template literals.
+- No ORM — raw SQL with the Neon HTTP driver.
+
+### Client-Side Storage (UI only)
+- `localStorage` is used ONLY for UI preferences: league ID, column visibility, Zustand-persisted settings.
+- No application data is stored client-side. All data reads go through server functions → Neon.
 
 ### Sync Pipeline
 - Server functions fetch raw data from external APIs/scrapers and normalize it.
-- Client receives normalized data, runs `resolveValues()` to match against Sleeper players.
-- Resolution includes normalization (0-9999 scale) and tiering (gap-threshold algorithm).
-- Client persists results into TanStack DB collections.
-- Auto-sync checks staleness (>24h) on app load per `localStorage` config.
+- Resolution includes normalization (0–9999 scale), quantile matching, and tiering.
+- Server persists results directly into Neon (no client-side persistence step).
+- Syncs can be triggered from the frontend (`/sync` page), CLI (`pnpm sync`), or cron (`tasks/sync.ts`).
 
 ### Value Normalization & Tiering
-- Raw values from each source are normalized to a 0-9999 scale (max value = 9999).
+- Raw values from each source are normalized to a 0–9999 scale (max value = 9999).
+- Quantile matching aligns non-KTC sources to KTC's empirical distribution per format lane (dynasty/redraft).
 - Tiering uses a gap-threshold algorithm in `app/lib/sync/tiering.ts`.
-- Tiers are computed dynamically at sync time based on natural breaks in normalized values.
-- Both raw and normalized values are stored and displayed.
+- Per-source tiers (tierFc, tierKtc, tierDd) and an average tier (tierAvg) are computed per lane.
+- Both raw and normalized values are stored.
 
 ### Server Functions
 - Use `createServerFn` from `@tanstack/react-start`.
 - Input validation via `.inputValidator(zodSchema)`.
 - Playwright imports must be dynamic (`await import('playwright')`) to avoid bundling issues.
-- Sync functions return data; persistence happens client-side.
+- Sync functions fetch, normalize, and write to Neon in one pass.
+- Read functions (`readPlayers`, `readValues`, `readSyncMetadata`) query Neon directly.
 
 ### Route Data Loading
-- Routes use `useLiveQuery` from `@tanstack/react-db` for reactive client-side data.
-- Collections must be initialized via `initCollections()` before use (async, OPFS setup).
-- Routes show a loading state until DB is ready, then render with live query data.
-- League data (rosters, users) is fetched on demand from Sleeper API via route loader.
+- Routes use TanStack Router loaders that call server read functions.
+- Server functions query Neon and return typed data to the client.
+- League data (rosters, users) is fetched live from Sleeper API via route loader (not persisted in Neon).
 
 ## Style Conventions
 
 ### TypeScript
-- Strict mode enabled; no `any` unless absolutely necessary (persistence layer type casts are an exception).
+- Strict mode enabled; no `any` unless absolutely necessary.
 - Prefer `interface` over `type` for object shapes.
 - Use explicit return types on exported functions.
 - Zod schemas in `db/schema.ts`; infer types with `z.infer<>`.
@@ -73,13 +81,32 @@ This is a fantasy football data aggregator built with TanStack Start. It syncs l
 1. Create `app/lib/sources/{name}/types.ts` with raw API response types.
 2. Create `app/lib/sources/{name}/client.ts` (or `scraper.ts` for Playwright).
 3. Create `app/lib/sources/{name}/provider.ts` implementing `DataSourceProvider`.
-4. Create `app/server/functions/sync-{name}.ts` that fetches, normalizes, and returns data.
-5. Add a sync card and handler in `app/routes/sync.tsx` that persists to collections.
+4. Create `app/server/functions/sync-{name}.ts` that fetches, normalizes, and writes to Neon.
+5. Add a sync card and handler in `app/routes/sync.tsx`.
 6. Register in `app/lib/sources/registry.ts` (optional, for programmatic access).
+
+## Environment Configuration
+
+### Required Secrets
+
+| Variable | Purpose | Where to set |
+|----------|---------|--------------|
+| `DATABASE_URL` | Neon Postgres connection string (pooled) | Vercel env vars, `.env.local` |
+
+### Scripts
+
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start dev server (port 3000) |
+| `pnpm build` | Production build |
+| `pnpm start` | Run production server |
+| `pnpm sync` | CLI: full sync to Neon |
+| `pnpm migrate` | Run database migrations |
 
 ## Known Constraints
 
 - Playwright requires browser binaries installed (`npx playwright install chromium`).
 - KTC has no API; scraper selectors may break if their HTML changes.
-- OPFS persistence requires a modern browser with Web Worker and OPFS support.
-- TanStack DB collections require async initialization before first use.
+- Dynasty Daddy CSV format may change without notice.
+- Neon free tier has connection/compute limits; pooled endpoint recommended.
+- `DATABASE_URL` must be set in all environments (Vercel, local dev, CI).
