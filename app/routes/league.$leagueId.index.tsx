@@ -9,10 +9,14 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { useState } from 'react'
+import { Settings, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageSubheader } from '@/components/ui/page-subheader'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -122,6 +126,8 @@ function LeagueOverviewPage() {
   const setShowPortfolioShare = useUiSettings((s) => s.setShowPortfolioShare)
   const overviewTab = useUiSettings((s) => s.leagueOverviewTab)
   const setOverviewTab = useUiSettings((s) => s.setLeagueOverviewTab)
+  const leagueFiltersCollapsed = useUiSettings((s) => s.leagueFiltersCollapsed)
+  const setLeagueFiltersCollapsed = useUiSettings((s) => s.setLeagueFiltersCollapsed)
 
   const aggregated = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
@@ -349,202 +355,240 @@ function LeagueOverviewPage() {
     depthWeights,
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 py-4 sm:px-4">
-      <div className="shrink-0 space-y-2">
-        <h1 className="text-3xl font-bold">League overview</h1>
-        <p className="text-muted-foreground max-w-3xl">
-          Cards on the <strong className="text-foreground">Teams</strong> tab list every player + pick, sorted by avg-norm ({lane}). Switch to the{' '}
-          <strong className="text-foreground">Positions</strong> tab for a sortable QB/RB/WR/TE strength table. Hover any control or badge for the formula in plain English.
-        </p>
-        <p className="text-muted-foreground text-sm">
-          <span className="font-medium text-foreground">{leagueSnapshot.league.name}</span> · {leagueSnapshot.league.season}{' '}
-          ·{' '}
-          <Link to="/rankings" search={{ leagueId }} className="underline">
-            Rankings
-          </Link>{' '}
-          ·{' '}
-          <Link to="/league/$leagueId/waiver" params={{ leagueId }} className="underline">
-            Waiver wire
-          </Link>
-        </p>
-      </div>
+  const filterPanel = (
+    <div className="flex flex-col gap-3">
+      <ConsensusIndicatorSettings className="rounded-lg border border-border bg-muted/20 p-3" />
 
-      <ConsensusIndicatorSettings className="shrink-0 rounded-lg border border-border bg-muted/20 p-3" />
-
-      <div className="flex shrink-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground text-sm">Metric:</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={metricLane === 'dynasty' ? 'default' : 'outline'}
-                onClick={() => setMetricLane('dynasty')}
-              >
-                Dynasty
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{explainLane('dynasty')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={metricLane === 'redraft' ? 'default' : 'outline'}
-                onClick={() => setMetricLane('redraft')}
-              >
-                Redraft
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{explainLane('redraft')}</TooltipContent>
-          </Tooltip>
-          <span className="text-muted-foreground ml-2 text-sm">Scale:</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant={normMode === 'max' ? 'default' : 'outline'} onClick={() => setNormMode('max')}>
-                Max
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{explainNormMode('max')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={normMode === 'quantile' ? 'default' : 'outline'}
-                onClick={() => setNormMode('quantile')}
-              >
-                Quantile
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{explainNormMode('quantile')}</TooltipContent>
-          </Tooltip>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground text-sm">Pool:</span>
-          {(['starter', 'backup', 'bench'] as const).map((tier) => {
-            const label = tier === 'starter' ? 'Starters' : tier === 'backup' ? 'Backups' : 'Bench'
-            return (
-              <Tooltip key={tier}>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant={tierIncludes[tier] ? 'default' : 'outline'}
-                    onClick={() => setTierIncludes((t) => ({ ...t, [tier]: !t[tier] }))}
-                  >
-                    {label}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className="space-y-1">
-                    <p>{explainTierToggle(tier)}</p>
-                    <p className="text-muted-foreground">Current pool: {pool}.</p>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            )
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground text-sm">Power:</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={powerMode === 'additive' ? 'default' : 'outline'}
-                onClick={() => setPowerMode('additive')}
-              >
-                Additive
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {explainPowerMode('additive', tierIncludes, depthWeights)}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={powerMode === 'depthWeighted' ? 'default' : 'outline'}
-                onClick={() => setPowerMode('depthWeighted')}
-              >
-                Depth-weighted
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {explainPowerMode('depthWeighted', tierIncludes, depthWeights)}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        {powerMode === 'depthWeighted' && (
-          <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-muted/20 p-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="text-muted-foreground cursor-help text-xs font-medium underline decoration-dotted">
-                  Depth weights (avg norm)
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{explainDepthWeights()}</TooltipContent>
-            </Tooltip>
-            {(['starter', 'backup', 'bench'] as const).map((tier) => (
-              <label key={tier} className="flex flex-col gap-0.5 text-xs">
-                <span className="text-muted-foreground capitalize">{tier}</span>
-                <Input
-                  className="h-8 w-20 font-mono text-xs"
-                  value={String(depthWeights[tier])}
-                  onChange={(e) => setWeight(tier, e.target.value)}
-                />
-              </label>
-            ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Metric:</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
-              type="button"
               size="sm"
-              variant="outline"
-              onClick={() => setDepthWeights(() => ({ ...DEFAULT_DEPTH_WEIGHTS }))}
+              variant={metricLane === 'dynasty' ? 'default' : 'outline'}
+              onClick={() => setMetricLane('dynasty')}
             >
-              Reset weights
+              Dynasty
             </Button>
-          </div>
-        )}
+          </TooltipTrigger>
+          <TooltipContent>{explainLane('dynasty')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={metricLane === 'redraft' ? 'default' : 'outline'}
+              onClick={() => setMetricLane('redraft')}
+            >
+              Redraft
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{explainLane('redraft')}</TooltipContent>
+        </Tooltip>
+        <span className="text-muted-foreground ml-2 text-sm">Scale:</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant={normMode === 'max' ? 'default' : 'outline'} onClick={() => setNormMode('max')}>
+              Max
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{explainNormMode('max')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={normMode === 'quantile' ? 'default' : 'outline'}
+              onClick={() => setNormMode('quantile')}
+            >
+              Quantile
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{explainNormMode('quantile')}</TooltipContent>
+        </Tooltip>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-muted-foreground text-sm">Badges:</span>
-          {(['max9999', 'ordinal', 'percentile'] as const).map((sd) => {
-            const label = sd === 'max9999' ? 'Max 9999' : sd === 'ordinal' ? 'Ordinal rank' : 'Percentile (1–99)'
-            return (
-              <Tooltip key={sd}>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant={scoreDisplay === sd ? 'default' : 'outline'}
-                    onClick={() => setScoreDisplay(sd as ScoreDisplay)}
-                  >
-                    {label}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{explainScoreDisplay(sd as ScoreDisplay)}</TooltipContent>
-              </Tooltip>
-            )
-          })}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Pool:</span>
+        {(['starter', 'backup', 'bench'] as const).map((tier) => {
+          const label = tier === 'starter' ? 'Starters' : tier === 'backup' ? 'Backups' : 'Bench'
+          return (
+            <Tooltip key={tier}>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant={tierIncludes[tier] ? 'default' : 'outline'}
+                  onClick={() => setTierIncludes((t) => ({ ...t, [tier]: !t[tier] }))}
+                >
+                  {label}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className="flex flex-col gap-1">
+                  <p>{explainTierToggle(tier)}</p>
+                  <p className="text-muted-foreground">Current pool: {pool}.</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Power:</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={powerMode === 'additive' ? 'default' : 'outline'}
+              onClick={() => setPowerMode('additive')}
+            >
+              Additive
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {explainPowerMode('additive', tierIncludes, depthWeights)}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={powerMode === 'depthWeighted' ? 'default' : 'outline'}
+              onClick={() => setPowerMode('depthWeighted')}
+            >
+              Depth-weighted
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {explainPowerMode('depthWeighted', tierIncludes, depthWeights)}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      {powerMode === 'depthWeighted' && (
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-muted/20 p-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant={showPortfolioShare ? 'default' : 'outline'}
-                className="ml-2"
-                onClick={() => setShowPortfolioShare(!showPortfolioShare)}
-              >
-                League total %
-              </Button>
+              <span className="text-muted-foreground cursor-help text-xs font-medium underline decoration-dotted">
+                Depth weights (avg norm)
+              </span>
             </TooltipTrigger>
-            <TooltipContent>{explainPortfolioShare(showPortfolioShare)}</TooltipContent>
+            <TooltipContent>{explainDepthWeights()}</TooltipContent>
           </Tooltip>
+          {(['starter', 'backup', 'bench'] as const).map((tier) => (
+            <label key={tier} className="flex flex-col gap-0.5 text-xs">
+              <span className="text-muted-foreground capitalize">{tier}</span>
+              <Input
+                className="h-8 w-20 font-mono text-xs"
+                value={String(depthWeights[tier])}
+                onChange={(e) => setWeight(tier, e.target.value)}
+              />
+            </label>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setDepthWeights(() => ({ ...DEFAULT_DEPTH_WEIGHTS }))}
+          >
+            Reset weights
+          </Button>
         </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Badges:</span>
+        {(['max9999', 'ordinal', 'percentile'] as const).map((sd) => {
+          const label = sd === 'max9999' ? 'Max 9999' : sd === 'ordinal' ? 'Ordinal rank' : 'Percentile (1-99)'
+          return (
+            <Tooltip key={sd}>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant={scoreDisplay === sd ? 'default' : 'outline'}
+                  onClick={() => setScoreDisplay(sd as ScoreDisplay)}
+                >
+                  {label}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{explainScoreDisplay(sd as ScoreDisplay)}</TooltipContent>
+            </Tooltip>
+          )
+        })}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={showPortfolioShare ? 'default' : 'outline'}
+              className="ml-2"
+              onClick={() => setShowPortfolioShare(!showPortfolioShare)}
+            >
+              League total %
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{explainPortfolioShare(showPortfolioShare)}</TooltipContent>
+        </Tooltip>
       </div>
+    </div>
+  )
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-4 sm:px-4">
+      <PageSubheader className="mx-[-0.75rem] sm:mx-[-1rem]">
+        <div className="relative h-12 w-full min-w-0">
+          <div className="absolute inset-0 hidden min-w-0 items-center gap-2 sm:flex">
+            <Popover open={!leagueFiltersCollapsed} onOpenChange={(open) => setLeagueFiltersCollapsed(!open)}>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 gap-2">
+                  <SlidersHorizontal className="size-4" />
+                  Filters
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="max-h-[min(72vh,560px)] w-[min(calc(100vw-2rem),54rem)] overflow-y-auto p-3"
+                onOpenAutoFocus={(e) => e.preventDefault()}
+              >
+                {filterPanel}
+              </PopoverContent>
+            </Popover>
+            <span className="min-w-0 truncate text-xs text-muted-foreground">
+              {lane} · {normMode} · {pool} · {powerMode === 'additive' ? 'additive' : 'depth-weighted'} power · {scoreDisplay}
+            </span>
+            <Link to="/settings" className="ml-auto shrink-0">
+              <Button type="button" variant="ghost" size="icon" className="size-8" title="Settings">
+                <Settings className="size-4" />
+                <span className="sr-only">Settings</span>
+              </Button>
+            </Link>
+          </div>
+
+          <div className="absolute inset-0 flex min-w-0 items-center gap-2 sm:hidden">
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              {lane} · {normMode} · {pool}
+            </span>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" size="icon" className="size-9 shrink-0" title="Filters">
+                  <SlidersHorizontal className="size-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="flex h-[min(75vh,560px)] flex-col overflow-hidden">
+                <SheetHeader className="shrink-0">
+                  <SheetTitle>League filters</SheetTitle>
+                </SheetHeader>
+                <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">{filterPanel}</div>
+              </SheetContent>
+            </Sheet>
+            <Link to="/settings" className="shrink-0">
+              <Button type="button" variant="ghost" size="icon" className="size-9" title="Settings">
+                <Settings className="size-4" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </PageSubheader>
 
       {aggregated.length === 0 ? (
         <p className="text-muted-foreground py-8 text-center">
@@ -685,16 +729,6 @@ function LeagueOverviewPage() {
                                 {slot.position}
                               </Badge>
                             ) : null}
-                            {slot.kind === 'player' ? (
-                              <ConsensusFlag
-                                className="ml-1.5"
-                                lane={metricLane}
-                                player={bySleeperId.get(slot.slotId)}
-                                minAbsDeltaPercentileCutoff={consensusCutoffLane}
-                                deltaFc={slot.deltaFc}
-                                deltaDd={slot.deltaDd}
-                              />
-                            ) : null}
                             {slot.depthTier === 'starter' ? (
                               <Badge className="ml-2 align-middle text-[10px]" variant="default">
                                 Starter
@@ -708,6 +742,16 @@ function LeagueOverviewPage() {
                                 Bench
                               </Badge>
                             )}
+                            {slot.kind === 'player' ? (
+                              <ConsensusFlag
+                                className="ml-1.5"
+                                lane={metricLane}
+                                player={bySleeperId.get(slot.slotId)}
+                                minAbsDeltaPercentileCutoff={consensusCutoffLane}
+                                deltaFc={slot.deltaFc}
+                                deltaDd={slot.deltaDd}
+                              />
+                            ) : null}
                           </div>
                           <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
                             {slot.avg != null ? slot.avg.toLocaleString() : '—'}

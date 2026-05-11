@@ -1,7 +1,7 @@
 import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
 import type { MetricLane } from '@/lib/rankings/league-board-power-input'
 
-export type ConsensusThresholdMode = 'rank' | 'percentile'
+export type ConsensusThresholdMode = 'rank' | 'percentile' | 'sign'
 
 /** Same-sign, both non-zero: FC and DD disagree with KTC in the same direction (norm deltas). */
 export function consensusNormSign(
@@ -115,6 +115,22 @@ export function passesConsensusPercentile(
   return joint >= cutoff
 }
 
+/**
+ * Sign mode: FC and DD norm deltas vs KTC are both positive or both negative (same direction),
+ * and min(|Δ FC|, |Δ DD|) ≥ minNormDiff (0 = any non-zero agreement).
+ */
+export function passesConsensusSignMin(
+  deltaFc: number | null | undefined,
+  deltaDd: number | null | undefined,
+  minNormDiff: number,
+): boolean {
+  if (!consensusNormSign(deltaFc, deltaDd)) return false
+  if (deltaFc == null || deltaDd == null) return false
+  const joint = Math.min(Math.abs(deltaFc), Math.abs(deltaDd))
+  const floor = Math.max(0, minNormDiff)
+  return joint >= floor
+}
+
 export function passesConsensusIndicator(
   p: AggregatedPlayer | null | undefined,
   lane: MetricLane,
@@ -123,11 +139,15 @@ export function passesConsensusIndicator(
   mode: ConsensusThresholdMode,
   rankMinGap: number,
   percentileCutoff: number | null,
+  signMinNormDiff: number,
 ): boolean {
   if (deltaFc == null || deltaDd == null) return false
   if (mode === 'rank') {
     if (!p) return false
     return passesConsensusRank(p, lane, deltaFc, deltaDd, rankMinGap)
   }
-  return passesConsensusPercentile(deltaFc, deltaDd, percentileCutoff)
+  if (mode === 'percentile') {
+    return passesConsensusPercentile(deltaFc, deltaDd, percentileCutoff)
+  }
+  return passesConsensusSignMin(deltaFc, deltaDd, signMinNormDiff)
 }

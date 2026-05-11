@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { PageSubheader } from '@/components/ui/page-subheader'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useLeagueRoute } from '@/lib/league-route-context'
@@ -255,28 +256,14 @@ function WaiverPage() {
   const lane = laneLabel(metricLane)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 py-4 sm:px-4">
-      <div className="shrink-0 space-y-1">
-        <p className="text-muted-foreground text-sm">
-          <Link to="/league/$leagueId" params={{ leagueId }} className="underline">
-            ← {leagueSnapshot.league.name}
-          </Link>{' '}
-          · {leagueSnapshot.league.season}
-        </p>
-        <h1 className="text-3xl font-bold">Waiver wire</h1>
-        <p className="text-muted-foreground max-w-3xl text-sm">
-          All available (un-rostered) players in this league, with mispricing deltas vs KTC. Sort any Δ column to
-          flip sign — descending shows biggest positive, ascending shows biggest negative. Hover any toggle or
-          column header for the formula in plain English.
-        </p>
-      </div>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <span className="text-muted-foreground text-sm">Metric:</span>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-4 sm:px-4">
+      <PageSubheader className="mx-[-0.75rem] sm:mx-[-1rem]">
+        <span className="text-muted-foreground shrink-0 text-xs sm:text-sm">Metric</span>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               size="sm"
+              className="h-8 shrink-0"
               variant={metricLane === 'dynasty' ? 'default' : 'outline'}
               onClick={() => setMetricLane('dynasty')}
             >
@@ -289,6 +276,7 @@ function WaiverPage() {
           <TooltipTrigger asChild>
             <Button
               size="sm"
+              className="h-8 shrink-0"
               variant={metricLane === 'redraft' ? 'default' : 'outline'}
               onClick={() => setMetricLane('redraft')}
             >
@@ -297,10 +285,15 @@ function WaiverPage() {
           </TooltipTrigger>
           <TooltipContent>{explainLane('redraft')}</TooltipContent>
         </Tooltip>
-        <span className="text-muted-foreground ml-2 text-sm">Scale:</span>
+        <span className="text-muted-foreground ml-1 shrink-0 text-xs sm:ml-2 sm:text-sm">Scale</span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="sm" variant={normMode === 'max' ? 'default' : 'outline'} onClick={() => setNormMode('max')}>
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              variant={normMode === 'max' ? 'default' : 'outline'}
+              onClick={() => setNormMode('max')}
+            >
               Max
             </Button>
           </TooltipTrigger>
@@ -310,6 +303,7 @@ function WaiverPage() {
           <TooltipTrigger asChild>
             <Button
               size="sm"
+              className="h-8 shrink-0"
               variant={normMode === 'quantile' ? 'default' : 'outline'}
               onClick={() => setNormMode('quantile')}
             >
@@ -318,7 +312,7 @@ function WaiverPage() {
           </TooltipTrigger>
           <TooltipContent>{explainNormMode('quantile')}</TooltipContent>
         </Tooltip>
-      </div>
+      </PageSubheader>
 
       <ConsensusIndicatorSettings className="shrink-0 rounded-lg border border-border bg-muted/20 p-3" />
 

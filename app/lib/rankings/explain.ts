@@ -161,19 +161,40 @@ export function explainDepthWeights(): string {
   return 'Multiplier applied to each player\'s avg-norm before summing into Power. Higher = that depth tier matters more.'
 }
 
+/** One-line hint for tooltips on mode buttons (Popover / modal friendly). */
+export function explainConsensusModeTooltip(mode: ConsensusThresholdMode): string {
+  if (mode === 'rank') {
+    return 'Rank gap: FC+DD same direction vs KTC on norms, and both rank vs KTC by at least your min gap.'
+  }
+  if (mode === 'percentile') {
+    return 'Percentile: FC+DD same direction vs KTC, and min(|Δ FC|,|Δ DD|) above a pool-derived cutoff.'
+  }
+  return 'Sign: FC+DD both above or both below KTC on normalized deltas; optional min size on min(|Δ|).'
+}
+
 export function explainConsensusThresholdMode(mode: ConsensusThresholdMode): string {
   if (mode === 'rank') {
     return [
-      'Rank gap (current): uses overall ranks (#1 = best). We require FantasyCalc and Dynasty Daddy to both rank the player at least N spots away from KTC on the same side, and that side must match the norm deltas (FC norm − KTC norm and DD norm − KTC norm both positive or both negative).',
-      'Why: 0–9999 norm space is not linear in “true” value; rank spots behave more evenly from stars to depth.',
-      'Applies everywhere the small trend icon appears (rankings, league rosters, delta tables, waiver).',
+      'Rank gap: uses overall ranks (#1 = best). FantasyCalc and Dynasty Daddy must both rank the player at least N spots away from KTC on the same side, matching norm deltas (FC−KTC and DD−KTC both positive or both negative).',
+      'Useful when you care about overall list position, not only raw norm distance.',
+    ].join(' ')
+  }
+  if (mode === 'percentile') {
+    return [
+      'Percentile: over non-pick players with both deltas, take min(|Δ FC|,|Δ DD|) per player and set a cutoff at your chosen percentile of that distribution.',
+      'The icon needs same sign vs KTC and joint magnitude at least that cutoff (or sign-only if the sample is too small).',
     ].join(' ')
   }
   return [
-    'Adaptive percentile (current): over all non-pick players with both Δ FC and Δ DD, we take min(|Δ FC|, |Δ DD|) per player, sort them, and set the cutoff at your chosen percentile (default 90).',
-    'The icon only shows when FC and DD agree on sign vs KTC and that joint disagreement is at least as large as the cutoff. Fewer false positives at the noisy low end; still sensitive at the top because the whole pool sets the scale.',
-    'If there are too few players with data, we fall back to sign-only (no magnitude gate) until the sample is large enough.',
-    'Applies everywhere the small trend icon appears.',
+    'Sign: FC and DD normalized deltas vs KTC are both positive (both sources higher than KTC) or both negative (both lower).',
+    'Optional minimum on min(|Δ FC|,|Δ DD|) filters out tiny disagreements; set to 0 to allow any same-sign non-zero pair.',
+  ].join(' ')
+}
+
+export function explainConsensusMinNormDiff(n: number): string {
+  return [
+    `Minimum joint norm distance (current: ${n}). We require min(|Δ FC|,|Δ DD|) ≥ ${n} after FC and DD agree in sign vs KTC.`,
+    '0 = show the icon whenever both deltas are non-zero and on the same side. Raise to require a stronger shared move vs KTC.',
   ].join(' ')
 }
 
@@ -199,12 +220,33 @@ export function explainConsensusIconSummary(ctx: {
   percentile: number
   percentileCutoff: number | null
   laneLabel: string
+  signMinNormDiff: number
 }): string {
-  const gate =
-    ctx.mode === 'rank'
-      ? `Rank mode: min rank gap ≥ ${ctx.rankMinGap} vs KTC, ranks aligned with norm deltas (${ctx.laneLabel}).`
-      : ctx.percentileCutoff != null
-        ? `Percentile mode: min(|Δ FC|,|Δ DD|) ≥ ${Math.round(ctx.percentileCutoff)} (${ctx.percentile}th percentile of the pool, ${ctx.laneLabel}).`
-        : `Percentile mode: sample too small for a stable cutoff — showing same-sign FC+DD vs KTC only (${ctx.percentile}th target, ${ctx.laneLabel}).`
-  return `${gate} Icon = both sources misprice vs KTC in the same direction.`
+  const rankGate = `Rank: min gap ≥ ${ctx.rankMinGap}, ranks aligned with norm deltas (${ctx.laneLabel}).`
+  const pctGate =
+    ctx.percentileCutoff != null
+      ? `Percentile: min(|Δ FC|,|Δ DD|) ≥ ${Math.round(ctx.percentileCutoff)} (${ctx.percentile}th pctl, ${ctx.laneLabel}).`
+      : `Percentile: small sample — sign-only gate (${ctx.percentile}th target, ${ctx.laneLabel}).`
+  const signGate =
+    ctx.signMinNormDiff > 0
+      ? `Sign: same direction vs KTC, min(|Δ FC|,|Δ DD|) ≥ ${ctx.signMinNormDiff} (${ctx.laneLabel}).`
+      : `Sign: same direction vs KTC on norms, any non-zero pair (${ctx.laneLabel}).`
+
+  if (ctx.mode === 'rank') {
+    return rankGate
+  }
+  if (ctx.mode === 'percentile') {
+    return pctGate
+  }
+  return signGate
+}
+
+/** Help text for the FC+DD vs KTC control cluster (Settings + inline). */
+export function explainConsensusModesOverview(): string {
+  return [
+    'Rank gap: same-direction norm deltas vs KTC plus rank-distance rules (min gap between FC/DD ranks and KTC).',
+    'Percentile: same-direction deltas plus a pool-based cutoff on min(|Δ FC|,|Δ DD|) from your percentile setting.',
+    'Sign: same-direction only (both positive or both negative vs KTC on normalized deltas), with an optional floor on min(|Δ FC|,|Δ DD|).',
+    'Persisted values also appear on Settings.',
+  ].join(' ')
 }

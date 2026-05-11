@@ -67,6 +67,8 @@ interface UiSettingsState {
   consensusRankMinGap: number
   /** Percentile mode: cutoff = this percentile of min(|Δ FC|, |Δ DD|) over all non-pick players with both deltas. */
   consensusPercentile: number
+  /** Sign mode: require min(|Δ FC|,|Δ DD|) ≥ this (0 = any same-sign non-zero pair). */
+  consensusMinNormDiff: number
   /** Collapsed filter toolbars (single row + “Filters” on mobile). */
   rankingsFiltersCollapsed: boolean
   leagueFiltersCollapsed: boolean
@@ -94,6 +96,7 @@ interface UiSettingsState {
   setConsensusThresholdMode: (v: ConsensusThresholdMode) => void
   setConsensusRankMinGap: (v: number) => void
   setConsensusPercentile: (v: number) => void
+  setConsensusMinNormDiff: (v: number) => void
   setRankingsFiltersCollapsed: (v: boolean) => void
   setLeagueFiltersCollapsed: (v: boolean) => void
   setTeamFiltersCollapsed: (v: boolean) => void
@@ -121,6 +124,7 @@ const DEFAULTS: Omit<
   | 'setConsensusThresholdMode'
   | 'setConsensusRankMinGap'
   | 'setConsensusPercentile'
+  | 'setConsensusMinNormDiff'
   | 'setRankingsFiltersCollapsed'
   | 'setLeagueFiltersCollapsed'
   | 'setTeamFiltersCollapsed'
@@ -145,6 +149,7 @@ const DEFAULTS: Omit<
   consensusThresholdMode: 'rank',
   consensusRankMinGap: 20,
   consensusPercentile: 90,
+  consensusMinNormDiff: 0,
   rankingsFiltersCollapsed: false,
   leagueFiltersCollapsed: false,
   teamFiltersCollapsed: false,
@@ -291,14 +296,19 @@ function migratePersistedToV3(raw: unknown): Partial<UiSettingsState> {
     out.myRosterIdByLeagueId = s.myRosterIdByLeagueId as Record<string, number>
   }
 
-  if (s.consensusThresholdMode === 'rank' || s.consensusThresholdMode === 'percentile') {
-    out.consensusThresholdMode = s.consensusThresholdMode
+  let consensusMode = s.consensusThresholdMode
+  if (consensusMode === 'all') consensusMode = 'sign'
+  if (consensusMode === 'rank' || consensusMode === 'percentile' || consensusMode === 'sign') {
+    out.consensusThresholdMode = consensusMode
   }
   if (typeof s.consensusRankMinGap === 'number' && Number.isFinite(s.consensusRankMinGap)) {
     out.consensusRankMinGap = Math.max(1, Math.min(200, Math.round(s.consensusRankMinGap)))
   }
   if (typeof s.consensusPercentile === 'number' && Number.isFinite(s.consensusPercentile)) {
     out.consensusPercentile = Math.max(50, Math.min(99, Math.round(s.consensusPercentile)))
+  }
+  if (typeof s.consensusMinNormDiff === 'number' && Number.isFinite(s.consensusMinNormDiff)) {
+    out.consensusMinNormDiff = Math.max(0, Math.min(5000, Math.round(s.consensusMinNormDiff)))
   }
 
   if (typeof s.rankingsFiltersCollapsed === 'boolean') out.rankingsFiltersCollapsed = s.rankingsFiltersCollapsed
@@ -344,6 +354,10 @@ export const useUiSettings = create<UiSettingsState>()(
         set({
           consensusPercentile: Number.isFinite(v) ? Math.max(50, Math.min(99, Math.round(v))) : 90,
         }),
+      setConsensusMinNormDiff: (v) =>
+        set({
+          consensusMinNormDiff: Number.isFinite(v) ? Math.max(0, Math.min(5000, Math.round(v))) : 0,
+        }),
       setRankingsFiltersCollapsed: (v) => set({ rankingsFiltersCollapsed: v }),
       setLeagueFiltersCollapsed: (v) => set({ leagueFiltersCollapsed: v }),
       setTeamFiltersCollapsed: (v) => set({ teamFiltersCollapsed: v }),
@@ -353,7 +367,7 @@ export const useUiSettings = create<UiSettingsState>()(
     }),
     {
       name: 'fantasy-ui-settings',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted, fromVersion) => {
@@ -394,6 +408,14 @@ export const useUiSettings = create<UiSettingsState>()(
             typeof merged.rankingsDefaultLeagueId === 'string' ? merged.rankingsDefaultLeagueId : ''
         }
 
+        if (v < 5) {
+          if (merged.consensusThresholdMode === 'all') merged.consensusThresholdMode = 'sign'
+          merged.consensusMinNormDiff =
+            typeof merged.consensusMinNormDiff === 'number' && Number.isFinite(merged.consensusMinNormDiff)
+              ? Math.max(0, Math.min(5000, Math.round(merged.consensusMinNormDiff as number)))
+              : 0
+        }
+
         const partial = migratePersistedToV3(merged)
         return { ...DEFAULTS, ...partial } as UiSettingsState
       },
@@ -415,6 +437,7 @@ export const useUiSettings = create<UiSettingsState>()(
         consensusThresholdMode: state.consensusThresholdMode,
         consensusRankMinGap: state.consensusRankMinGap,
         consensusPercentile: state.consensusPercentile,
+        consensusMinNormDiff: state.consensusMinNormDiff,
         rankingsFiltersCollapsed: state.rankingsFiltersCollapsed,
         leagueFiltersCollapsed: state.leagueFiltersCollapsed,
         teamFiltersCollapsed: state.teamFiltersCollapsed,

@@ -352,15 +352,6 @@ function RankingsPage() {
         {posRank != null && rank !== null ? (
           <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
         ) : null}
-        <ConsensusFlag
-          lane="dynasty"
-          minAbsDeltaPercentileCutoff={dynConsensusCutoff}
-          deltaFc={p.dynDeltaNormFcVsKtc}
-          deltaDd={p.dynDeltaNormDdVsKtc}
-          player={p}
-          laneLabel="Dyn"
-          className="shrink-0"
-        />
       </div>
     )
 
@@ -370,15 +361,6 @@ function RankingsPage() {
         {posRank != null && rank !== null ? (
           <span className="text-muted-foreground text-xs">{formatPosRankLabel(p.position, posRank)}</span>
         ) : null}
-        <ConsensusFlag
-          lane="redraft"
-          minAbsDeltaPercentileCutoff={rdConsensusCutoff}
-          deltaFc={p.rdDeltaNormFcVsKtc}
-          deltaDd={p.rdDeltaNormDdVsKtc}
-          player={p}
-          laneLabel="Rd"
-          className="shrink-0"
-        />
       </div>
     )
 
@@ -395,23 +377,44 @@ function RankingsPage() {
       {
         accessorKey: 'name',
         header: 'Player',
-        cell: ({ row }) => (
-          <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
-            <Link
-              to="/player/$sleeperId"
-              params={{ sleeperId: row.original.sleeperId }}
-              search={{ leagueId: search.leagueId as string | undefined }}
-              className="font-medium hover:underline"
-            >
-              {row.original.name}
-            </Link>
-            {row.original.position && (
-              <Badge variant="outline" className="text-xs">
-                {row.original.position}
-              </Badge>
-            )}
-          </div>
-        ),
+        cell: ({ row }) => {
+          const p = row.original
+          return (
+            <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+              <Link
+                to="/player/$sleeperId"
+                params={{ sleeperId: p.sleeperId }}
+                search={{ leagueId: search.leagueId as string | undefined }}
+                className="font-medium hover:underline"
+              >
+                {p.name}
+              </Link>
+              {p.position ? (
+                <Badge variant="outline" className="text-xs">
+                  {p.position}
+                </Badge>
+              ) : null}
+              <ConsensusFlag
+                lane="dynasty"
+                minAbsDeltaPercentileCutoff={dynConsensusCutoff}
+                deltaFc={p.dynDeltaNormFcVsKtc}
+                deltaDd={p.dynDeltaNormDdVsKtc}
+                player={p}
+                laneLabel="Dyn"
+                className="shrink-0"
+              />
+              <ConsensusFlag
+                lane="redraft"
+                minAbsDeltaPercentileCutoff={rdConsensusCutoff}
+                deltaFc={p.rdDeltaNormFcVsKtc}
+                deltaDd={p.rdDeltaNormDdVsKtc}
+                player={p}
+                laneLabel="Rd"
+                className="shrink-0"
+              />
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'team',
@@ -708,18 +711,8 @@ function RankingsPage() {
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 py-4 sm:px-4">
-      <div className="shrink-0 space-y-2">
-        <div className="px-1">
-          <h1 className="text-3xl font-bold">Rankings</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Dynasty and redraft side by side. Norm scale and defaults live in{' '}
-            <Link to="/settings" className="text-foreground underline">
-              Settings
-            </Link>
-            .
-          </p>
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-4 pt-2 sm:px-4">
+      <div className="shrink-0 -mx-3 sm:-mx-4">
         <RankingsToolbar
           leagueSnapshot={leagueSnapshot}
           searchLeagueId={search.leagueId}

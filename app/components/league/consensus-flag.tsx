@@ -3,10 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import type { MetricLane } from '@/lib/rankings/league-board-power-input'
 import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
-import {
-  passesConsensusIndicator,
-  consensusNormSign,
-} from '@/lib/rankings/consensus-threshold'
+import { passesConsensusIndicator, consensusNormSign } from '@/lib/rankings/consensus-threshold'
 import { explainConsensusIconSummary } from '@/lib/rankings/explain'
 import { useUiSettings } from '@/lib/stores/ui-settings'
 
@@ -16,7 +13,7 @@ interface ConsensusFlagProps {
   minAbsDeltaPercentileCutoff: number | null
   deltaFc: number | null | undefined
   deltaDd: number | null | undefined
-  /** Required for rank mode; optional for percentile-only (still used for richer tooltip when present). */
+  /** Required for rank mode; optional for percentile / sign (still used for richer tooltip when present). */
   player?: AggregatedPlayer | null
   /** Optional lane tag rendered next to the icon (e.g. "Dyn", "Rd"). */
   laneLabel?: string
@@ -28,7 +25,7 @@ function formatDelta(n: number | null | undefined): string {
   return n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString()
 }
 
-/** Icon when FC and DD agree vs KTC, gated by persisted rank-gap or adaptive percentile rules. */
+/** Icon when FC and DD agree vs KTC, gated by persisted rank / percentile / sign rules. */
 export function ConsensusFlag({
   lane,
   minAbsDeltaPercentileCutoff,
@@ -41,6 +38,7 @@ export function ConsensusFlag({
   const mode = useUiSettings((s) => s.consensusThresholdMode)
   const rankMinGap = useUiSettings((s) => s.consensusRankMinGap)
   const percentile = useUiSettings((s) => s.consensusPercentile)
+  const signMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
 
   const dir = consensusNormSign(deltaFc, deltaDd)
   const passes = passesConsensusIndicator(
@@ -51,6 +49,7 @@ export function ConsensusFlag({
     mode,
     rankMinGap,
     minAbsDeltaPercentileCutoff,
+    signMinNormDiff,
   )
   if (!dir || !passes) return null
 
@@ -68,11 +67,9 @@ export function ConsensusFlag({
     percentile,
     percentileCutoff: minAbsDeltaPercentileCutoff,
     laneLabel: laneLabel ?? (lane === 'dynasty' ? 'Dynasty' : 'Redraft'),
+    signMinNormDiff,
   })
-  const tooltip = [
-    `${lanePrefix}FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`,
-    summary,
-  ].join(' ')
+  const mainLine = `${lanePrefix}FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`
 
   return (
     <Tooltip>
@@ -89,7 +86,10 @@ export function ConsensusFlag({
           {laneLabel ? <span className="text-[10px] font-semibold uppercase tracking-wide">{laneLabel}</span> : null}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-sm">{tooltip}</TooltipContent>
+      <TooltipContent className="max-w-xs">
+        <p className="text-xs leading-snug">{mainLine}</p>
+        <p className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs leading-snug">{summary}</p>
+      </TooltipContent>
     </Tooltip>
   )
 }
