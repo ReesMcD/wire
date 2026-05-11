@@ -46,6 +46,8 @@ import { useLeagueRoute } from '@/lib/league-route-context'
 import { useUiSettings, type ScoreDisplay } from '@/lib/stores/ui-settings'
 import { ConsensusFlag } from '@/components/league/consensus-flag'
 import { ConsensusIndicatorSettings } from '@/components/league/consensus-indicator-settings'
+import { PositionMultiFilter } from '@/components/rankings/position-multi-filter'
+import { passesPositionMultiFilter } from '@/lib/rankings/position-multi-filter'
 import {
   LeagueRosterSlotTooltipBody,
   type LeagueRosterSlotConsensusCtx,
@@ -132,10 +134,15 @@ function RosterSlotNormCell({
   consensus: LeagueRosterSlotConsensusCtx
 }) {
   const inner = (
-    <span className="text-muted-foreground inline-flex shrink-0 items-baseline gap-1.5 tabular-nums text-xs">
-      <span>{displayNormDyn != null ? displayNormDyn.toLocaleString() : '—'}</span>
-      <span className="text-muted-foreground/70">/</span>
-      <span>{displayNormRd != null ? displayNormRd.toLocaleString() : '—'}</span>
+    <span className="text-muted-foreground inline-flex shrink-0 flex-col items-end gap-0.5 tabular-nums text-xs">
+      <span className="inline-flex items-baseline gap-1">
+        <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/90">Dyn</span>
+        <span>{displayNormDyn != null ? displayNormDyn.toLocaleString() : '—'}</span>
+      </span>
+      <span className="inline-flex items-baseline gap-1">
+        <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/90">Rd</span>
+        <span>{displayNormRd != null ? displayNormRd.toLocaleString() : '—'}</span>
+      </span>
     </span>
   )
   if (!player) return inner
@@ -181,6 +188,8 @@ function LeagueOverviewPage() {
   const leagueOverviewDisplayNormSource = useUiSettings((s) => s.leagueOverviewDisplayNormSource)
   const setLeagueOverviewDisplayNormSource = useUiSettings((s) => s.setLeagueOverviewDisplayNormSource)
 
+  const [rosterLinePositionTags, setRosterLinePositionTags] = useState<string[]>([])
+
   const aggregated = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
     [players, values, normMode],
@@ -223,6 +232,22 @@ function LeagueOverviewPage() {
 
   const teamRows = useMemo(() => {
     const perTeam = leagueSnapshot.rosters.map((roster) => {
+      const fullMetricsDyn = rosterMetricsForPowerLane(roster.playerIds, bySleeperId, 'dynasty')
+      const depthMapDyn = depthTierByPlayerId(fullMetricsDyn, 'dynasty')
+      const poolDyn = fullMetricsDyn.filter((p) => tierAllowed(depthMapDyn.get(p.sleeperId) ?? 'bench'))
+      const rawPowerDyn =
+        powerMode === 'depthWeighted'
+          ? weightedDepthPowerInput(poolDyn, 'dynasty', depthMapDyn, depthWeights)
+          : defaultPowerInput(poolDyn, 'dynasty')
+
+      const fullMetricsRd = rosterMetricsForPowerLane(roster.playerIds, bySleeperId, 'redraft')
+      const depthMapRd = depthTierByPlayerId(fullMetricsRd, 'redraft')
+      const poolRd = fullMetricsRd.filter((p) => tierAllowed(depthMapRd.get(p.sleeperId) ?? 'bench'))
+      const rawPowerRd =
+        powerMode === 'depthWeighted'
+          ? weightedDepthPowerInput(poolRd, 'redraft', depthMapRd, depthWeights)
+          : defaultPowerInput(poolRd, 'redraft')
+
       const fullMetrics = rosterMetricsForPowerLane(roster.playerIds, bySleeperId, metricLane)
       const depthMap = depthTierByPlayerId(fullMetrics, metricLane)
       const starters = selectValueStarters(fullMetrics, metricLane)
@@ -230,10 +255,7 @@ function LeagueOverviewPage() {
 
       const pool = fullMetrics.filter((p) => tierAllowed(depthMap.get(p.sleeperId) ?? 'bench'))
 
-      const rawPower =
-        powerMode === 'depthWeighted'
-          ? weightedDepthPowerInput(pool, metricLane, depthMap, depthWeights)
-          : defaultPowerInput(pool, metricLane)
+      const rawPower = metricLane === 'dynasty' ? rawPowerDyn : rawPowerRd
 
       const rawKtc = pool.reduce((s, p) => s + (ktcLane(p, metricLane) ?? 0), 0)
       const rawFc = pool.reduce((s, p) => s + (fcLane(p, metricLane) ?? 0), 0)
@@ -301,6 +323,8 @@ function LeagueOverviewPage() {
         rosterSlots: rosterSlotsSorted,
         otherCount: fullMetrics.filter((p) => !starterIds.has(p.sleeperId)).length,
         rawPower,
+        rawPowerDyn,
+        rawPowerRd,
         rawKtc,
         rawFc,
         rawDd,
@@ -312,6 +336,8 @@ function LeagueOverviewPage() {
     })
 
     const rawPowers = perTeam.map((r) => r.rawPower)
+    const rawPowersDyn = perTeam.map((r) => r.rawPowerDyn)
+    const rawPowersRd = perTeam.map((r) => r.rawPowerRd)
     const rawKtcs = perTeam.map((r) => r.rawKtc)
     const rawFcs = perTeam.map((r) => r.rawFc)
     const rawDds = perTeam.map((r) => r.rawDd)
@@ -321,6 +347,8 @@ function LeagueOverviewPage() {
     const rawTes = perTeam.map((r) => r.rawTe)
 
     const powerPct = tieAwarePercentiles(rawPowers)
+    const powerPctDyn = tieAwarePercentiles(rawPowersDyn)
+    const powerPctRd = tieAwarePercentiles(rawPowersRd)
     const ktcPct = tieAwarePercentiles(rawKtcs)
     const fcPct = tieAwarePercentiles(rawFcs)
     const ddPct = tieAwarePercentiles(rawDds)
@@ -330,6 +358,8 @@ function LeagueOverviewPage() {
     const tePct = tieAwarePercentiles(rawTes)
 
     const powerOrd = competitionRanksHighIsBest(rawPowers)
+    const powerOrdDyn = competitionRanksHighIsBest(rawPowersDyn)
+    const powerOrdRd = competitionRanksHighIsBest(rawPowersRd)
     const ktcOrd = competitionRanksHighIsBest(rawKtcs)
     const fcOrd = competitionRanksHighIsBest(rawFcs)
     const ddOrd = competitionRanksHighIsBest(rawDds)
@@ -339,6 +369,8 @@ function LeagueOverviewPage() {
     const teOrd = competitionRanksHighIsBest(rawTes)
 
     const power9999 = normalizeLeagueMetricTo9999(rawPowers)
+    const power9999Dyn = normalizeLeagueMetricTo9999(rawPowersDyn)
+    const power9999Rd = normalizeLeagueMetricTo9999(rawPowersRd)
     const ktc9999 = normalizeLeagueMetricTo9999(rawKtcs)
     const fc9999 = normalizeLeagueMetricTo9999(rawFcs)
     const dd9999 = normalizeLeagueMetricTo9999(rawDds)
@@ -356,7 +388,8 @@ function LeagueOverviewPage() {
       if (scoreDisplay === 'ordinal') {
         return {
           ...r,
-          displayPower: pickOrdinal(powerOrd),
+          displayPowerDyn: pickOrdinal(powerOrdDyn),
+          displayPowerRd: pickOrdinal(powerOrdRd),
           displayKtc: pickOrdinal(ktcOrd),
           displayFc: pickOrdinal(fcOrd),
           displayDd: pickOrdinal(ddOrd),
@@ -370,7 +403,8 @@ function LeagueOverviewPage() {
       if (scoreDisplay === 'percentile') {
         return {
           ...r,
-          displayPower: pickPct(powerPct),
+          displayPowerDyn: pickPct(powerPctDyn),
+          displayPowerRd: pickPct(powerPctRd),
           displayKtc: pickPct(ktcPct),
           displayFc: pickPct(fcPct),
           displayDd: pickPct(ddPct),
@@ -383,7 +417,8 @@ function LeagueOverviewPage() {
       }
       return {
         ...r,
-        displayPower: pick9999(power9999),
+        displayPowerDyn: pick9999(power9999Dyn),
+        displayPowerRd: pick9999(power9999Rd),
         displayKtc: pick9999(ktc9999),
         displayFc: pick9999(fc9999),
         displayDd: pick9999(dd9999),
@@ -407,8 +442,13 @@ function LeagueOverviewPage() {
   ])
 
   const sortedTeams = useMemo(
-    () => [...teamRows].sort((a, b) => b.rawPower - a.rawPower || a.label.localeCompare(b.label)),
-    [teamRows],
+    () =>
+      [...teamRows].sort((a, b) => {
+        const av = metricLane === 'dynasty' ? a.rawPowerDyn : a.rawPowerRd
+        const bv = metricLane === 'dynasty' ? b.rawPowerDyn : b.rawPowerRd
+        return bv - av || a.label.localeCompare(b.label)
+      }),
+    [teamRows, metricLane],
   )
 
   const formatScoreBadge = (label: string, value: number) => {
@@ -511,6 +551,11 @@ function LeagueOverviewPage() {
             </Tooltip>
           )
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground text-sm">Roster lines:</span>
+        <PositionMultiFilter selected={rosterLinePositionTags} onChange={setRosterLinePositionTags} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -716,28 +761,53 @@ function LeagueOverviewPage() {
                         </Link>
                       </CardTitle>
                       <div className="flex shrink-0 flex-col items-end gap-0.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge
-                              variant="secondary"
-                              className={cn(
-                                'cursor-help tabular-nums font-semibold',
-                                scoreDisplay === 'max9999' ? 'text-sm' : 'text-base',
-                              )}
-                            >
-                              {formatScoreBadge('Power', row.displayPower)}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div className="space-y-1">
-                              <p>{explainBadge('Power', badgeCtx)}</p>
-                              <p className="text-muted-foreground">
-                                Raw Σ for this team: {Math.round(row.rawPower).toLocaleString()}.
-                              </p>
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                        <span className="text-muted-foreground text-xs tabular-nums">Σ {Math.round(row.rawPower)}</span>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="secondary"
+                                className={cn(
+                                  'cursor-help tabular-nums font-semibold',
+                                  scoreDisplay === 'max9999' ? 'text-xs' : 'text-sm',
+                                )}
+                              >
+                                {formatScoreBadge('Dyn', row.displayPowerDyn)}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="space-y-1">
+                                <p>{explainBadge('Power', { ...badgeCtx, lane: 'dynasty' })}</p>
+                                <p className="text-muted-foreground">
+                                  Dynasty raw Σ: {Math.round(row.rawPowerDyn).toLocaleString()}.
+                                </p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'cursor-help tabular-nums font-semibold',
+                                  scoreDisplay === 'max9999' ? 'text-xs' : 'text-sm',
+                                )}
+                              >
+                                {formatScoreBadge('Rd', row.displayPowerRd)}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="space-y-1">
+                                <p>{explainBadge('Power', { ...badgeCtx, lane: 'redraft' })}</p>
+                                <p className="text-muted-foreground">
+                                  Redraft raw Σ: {Math.round(row.rawPowerRd).toLocaleString()}.
+                                </p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                          Σ {Math.round(row.rawPowerDyn)} dyn · {Math.round(row.rawPowerRd)} rd
+                        </span>
                         {showPortfolioShare ? (
                           <span className="text-muted-foreground text-xs tabular-nums">
                             {row.portfolioSharePct.toFixed(1)}% of league Σ
@@ -809,7 +879,15 @@ function LeagueOverviewPage() {
                   <CardContent className="flex flex-col gap-0 border-t border-border pt-3">
                     <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wide">Roster</p>
                     <ul className="space-y-1.5 pr-1 text-sm">
-                      {row.rosterSlots.map((slot) => (
+                      {row.rosterSlots
+                        .filter((slot) =>
+                          passesPositionMultiFilter(
+                            { position: slot.position ?? '', sleeperId: slot.slotId },
+                            rosterLinePositionTags,
+                            false,
+                          ),
+                        )
+                        .map((slot) => (
                         <li
                           key={slot.slotId}
                           className={cn(

@@ -1,8 +1,8 @@
 import type { ColumnDef } from '@tanstack/react-table'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
 import { formatPosRankLabel } from '@/lib/rankings/neighbor-lists'
+import { tierBadgeClass } from '@/lib/rankings/tier-badge-style'
 import { wrapNormWithLaneTooltip, type TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
 
 /** Grouped KTC/FC/DD/Avg dynasty + redraft blocks for rankings + team roster wide tables. */
@@ -12,7 +12,40 @@ export function wideSpreadsheetDataColumnGroups(opts: {
   const { metricLane } = opts
 
   const tierCell = (val: number | null) =>
-    val !== null ? <Badge variant="secondary">T{val}</Badge> : '-'
+    val !== null ? (
+      <span
+        className={cn(
+          'inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-tight',
+          tierBadgeClass(val),
+        )}
+      >
+        T{val}
+      </span>
+    ) : (
+      '-'
+    )
+
+  const dynRdDiff = (dyn: number | null, rd: number | null) => {
+    if (dyn == null || rd == null) return null
+    return dyn - rd
+  }
+
+  const dynRdDiffCell = (dyn: number | null, rd: number | null) => {
+    const v = dynRdDiff(dyn, rd)
+    if (v == null) return <span className="text-muted-foreground">—</span>
+    const text = v > 0 ? `+${v.toLocaleString()}` : v.toLocaleString()
+    return (
+      <span
+        className={cn(
+          'tabular-nums',
+          v > 0 && 'text-emerald-600 dark:text-emerald-500',
+          v < 0 && 'text-rose-600 dark:text-rose-400',
+        )}
+      >
+        {text}
+      </span>
+    )
+  }
 
   const normCell = (val: number | null, player: AggregatedPlayer, columnLane: TableMetricLane) =>
     wrapNormWithLaneTooltip(
@@ -378,6 +411,40 @@ export function wideSpreadsheetDataColumnGroups(opts: {
           accessorKey: 'rdDeltaNormFcVsKtc',
           header: 'Δ pts',
           cell: ({ getValue }) => deltaPtsCell(getValue() as number | null),
+        },
+      ],
+    },
+    {
+      id: 'dynasty_redraft_diff',
+      header: 'Dyn − Rd',
+      columns: [
+        {
+          id: 'diff_ktc_norm',
+          accessorFn: (row) => dynRdDiff(row.dynKtcNorm, row.rdKtcNorm),
+          header: 'KTC Δ',
+          cell: ({ row }) => dynRdDiffCell(row.original.dynKtcNorm, row.original.rdKtcNorm),
+          sortUndefined: 'last',
+        },
+        {
+          id: 'diff_fc_norm',
+          accessorFn: (row) => dynRdDiff(row.dynFcNorm, row.rdFcNorm),
+          header: 'FC Δ',
+          cell: ({ row }) => dynRdDiffCell(row.original.dynFcNorm, row.original.rdFcNorm),
+          sortUndefined: 'last',
+        },
+        {
+          id: 'diff_dd_norm',
+          accessorFn: (row) => dynRdDiff(row.dynDdNorm, row.rdDdNorm),
+          header: 'DD Δ',
+          cell: ({ row }) => dynRdDiffCell(row.original.dynDdNorm, row.original.rdDdNorm),
+          sortUndefined: 'last',
+        },
+        {
+          id: 'diff_avg_norm',
+          accessorFn: (row) => dynRdDiff(row.dynAvgNorm, row.rdAvgNorm),
+          header: 'Avg Δ',
+          cell: ({ row }) => dynRdDiffCell(row.original.dynAvgNorm, row.original.rdAvgNorm),
+          sortUndefined: 'last',
         },
       ],
     },

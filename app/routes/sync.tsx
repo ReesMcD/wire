@@ -68,6 +68,7 @@ function SyncPage() {
     ktc?: string
     dynastyDaddy?: string
     league?: string
+    all?: string
   }>({})
   const [leagueIdInput, setLeagueIdInput] = useState('')
 
@@ -118,6 +119,62 @@ function SyncPage() {
 
   const onSyncDynastyDaddy = () => run('dynastyDaddy', () => syncDynastyDaddy())
 
+  const onSyncAll = async () => {
+    const id = leagueIdInput.trim()
+    const collected: string[] = []
+    setBusy('all')
+    setErrors((e) => ({ ...e, all: undefined }))
+    const step = async (label: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn()
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        collected.push(`${label}: ${msg}`)
+      }
+    }
+    try {
+      await step('Sleeper players', () => syncSleeperPlayers())
+      await step('FantasyCalc', () =>
+        syncFantasyCalc({
+          data: {
+            numQbs: settings.superflex ? 2 : 1,
+            numTeams: 12,
+            ppr: settings.ppr,
+          },
+        }),
+      )
+      await step('KTC', () =>
+        syncKtc({
+          data: {
+            numQbs: settings.superflex ? 2 : 1,
+          },
+        }),
+      )
+      await step('Dynasty Daddy', () => syncDynastyDaddy())
+      if (!id) {
+        collected.push('League rosters: skipped (enter a league ID to fetch rosters).')
+      } else {
+        await step('League rosters', async () => {
+          await getLeagueRosterSnapshot({ data: { leagueId: id } })
+          try {
+            localStorage.setItem(LEAGUE_ID_STORAGE_KEY, id)
+            localStorage.setItem(LEAGUE_FETCHED_AT_STORAGE_KEY, new Date().toISOString())
+            notifyLeagueStorageChanged()
+          } catch {
+            /* ignore */
+          }
+        })
+      }
+      await refreshMeta()
+      await router.invalidate()
+    } finally {
+      setBusy(null)
+      if (collected.length > 0) {
+        setErrors((e) => ({ ...e, all: collected.join('\n') }))
+      }
+    }
+  }
+
   const onSyncLeagueRosters = () =>
     run('league', async () => {
       const id = leagueIdInput.trim()
@@ -147,6 +204,26 @@ function SyncPage() {
           where applicable).
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sync all</CardTitle>
+          <CardDescription>
+            Runs Sleeper players → FantasyCalc → KTC → Dynasty Daddy → league rosters (if a league ID is set)
+            in order. Partial failures are collected; successful steps stay saved.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {errors.all && (
+            <pre className="max-h-40 overflow-auto rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive whitespace-pre-wrap">
+              {errors.all}
+            </pre>
+          )}
+          <Button onClick={onSyncAll} disabled={busy !== null}>
+            {busy === 'all' ? 'Running full sync…' : 'Sync all'}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -12,6 +12,7 @@ export const RANKINGS_GROUP_COLUMN_IDS = [
   'redraft_ktc',
   'redraft_dd',
   'redraft_fc',
+  'dynasty_redraft_diff',
 ] as const
 
 export type RankingsGroupColumnId = (typeof RANKINGS_GROUP_COLUMN_IDS)[number]

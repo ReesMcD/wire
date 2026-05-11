@@ -45,6 +45,7 @@ import {
   writeRankingsGroupVisibilityToStorage,
 } from '@/lib/rankings/rankings-column-visibility'
 import { wideSpreadsheetDataColumnGroups } from '@/lib/rankings/wide-spreadsheet-data-columns'
+import { passesPositionMultiFilter } from '@/lib/rankings/position-multi-filter'
 
 const ESTIMATE_ROW_HEIGHT_PX = 36
 const ROW_VIRTUAL_OVERSCAN = 32
@@ -134,7 +135,7 @@ function RankingsPage() {
 
   const [sorting, setSorting] = useState<SortingState>([{ id: 'dynasty_avg_norm', desc: true }])
   const [globalFilter, setGlobalFilter] = useState('')
-  const [positionFilter, setPositionFilter] = useState<string | null>(null)
+  const [selectedPositionTags, setSelectedPositionTags] = useState<string[]>([])
   /** Rosters selected for highlight (multi-select). */
   const [highlightTeamIds, setHighlightTeamIds] = useState<number[]>([])
   const [highlightAvailable, setHighlightAvailable] = useState(false)
@@ -232,6 +233,13 @@ function RankingsPage() {
     })
   }, [])
 
+  const toggleLaneDiffColumns = useCallback(() => {
+    setGroupColumnVisibility((v) => {
+      const on = v.dynasty_redraft_diff !== false
+      return { ...v, dynasty_redraft_diff: !on }
+    })
+  }, [])
+
   const aggregatedData = useMemo(
     () => aggregatePlayerValues(players, values, normMode),
     [players, values, normMode],
@@ -263,9 +271,9 @@ function RankingsPage() {
   }, [aggregatedData, leagueSnapshot])
 
   const filteredData = useMemo(() => {
-    let rows = tableRows
-    if (hidePickRows) rows = rows.filter((p) => p.position !== 'PICK')
-    if (positionFilter) rows = rows.filter((p) => p.position === positionFilter)
+    let rows = tableRows.filter((p) =>
+      passesPositionMultiFilter(p, selectedPositionTags, hidePickRows),
+    )
     if (leagueSnapshot && hideUnhighlighted) {
       rows = rows.filter(({ leagueKind }) =>
         passesLeagueVisibility(leagueKind, selectedRosterSet, highlightAvailable, hideUnhighlighted),
@@ -275,7 +283,7 @@ function RankingsPage() {
   }, [
     tableRows,
     hidePickRows,
-    positionFilter,
+    selectedPositionTags,
     leagueSnapshot,
     hideUnhighlighted,
     selectedRosterSet,
@@ -398,6 +406,7 @@ function RankingsPage() {
   const redraftGroupVisible = ['redraft_avg', 'redraft_ktc', 'redraft_dd', 'redraft_fc'].some(
     (id) => groupColumnVisibility[id] !== false,
   )
+  const laneDiffGroupVisible = groupColumnVisibility.dynasty_redraft_diff !== false
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-4 pt-2 sm:px-4">
@@ -407,8 +416,8 @@ function RankingsPage() {
           searchLeagueId={search.leagueId}
           globalFilter={globalFilter}
           onGlobalFilterChange={setGlobalFilter}
-          positionFilter={positionFilter}
-          onPositionFilterChange={setPositionFilter}
+          selectedPositionTags={selectedPositionTags}
+          onSelectedPositionTagsChange={setSelectedPositionTags}
           normMode={normMode}
           onNormModeChange={setNormMode}
           hidePickRows={hidePickRows}
@@ -417,6 +426,8 @@ function RankingsPage() {
           redraftGroupVisible={redraftGroupVisible}
           onToggleDynastyColumns={toggleDynastyColumns}
           onToggleRedraftColumns={toggleRedraftColumns}
+          laneDiffGroupVisible={laneDiffGroupVisible}
+          onToggleLaneDiffColumns={toggleLaneDiffColumns}
           highlightAvailable={highlightAvailable}
           onHighlightAvailableChange={setHighlightAvailable}
           highlightTeamIds={highlightTeamIds}

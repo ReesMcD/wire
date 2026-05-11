@@ -20,6 +20,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PositionMultiFilter } from '@/components/rankings/position-multi-filter'
+import { passesPositionMultiFilter } from '@/lib/rankings/position-multi-filter'
+import { FA_HIGHLIGHT_PARTS, rosterHighlightParts } from '@/lib/league/roster-index'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { PageSubheader } from '@/components/ui/page-subheader'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -58,7 +62,8 @@ function WaiverPage() {
   const setNormMode = useUiSettings((s) => s.setNormMode)
 
   const [globalFilter, setGlobalFilter] = useState('')
-  const [positionFilter, setPositionFilter] = useState<string | null>(null)
+  const [selectedPositionTags, setSelectedPositionTags] = useState<string[]>([])
+  const [waiverTab, setWaiverTab] = useState<'compare' | 'mispriced'>('compare')
   const [sorting, setSorting] = useState<SortingState>([{ id: 'avgNorm', desc: true }])
   /** When set, that roster’s players are listed with FAs for side‑by‑side comparison. */
   const [compareRosterId, setCompareRosterId] = useState<number | null>(null)
@@ -89,10 +94,8 @@ function WaiverPage() {
   }, [aggregated, leagueSnapshot.rosters])
 
   const filteredFa = useMemo(() => {
-    let rows = faPlayers
-    if (positionFilter) rows = rows.filter((p) => p.position === positionFilter)
-    return rows
-  }, [faPlayers, positionFilter])
+    return faPlayers.filter((p) => passesPositionMultiFilter(p, selectedPositionTags, false))
+  }, [faPlayers, selectedPositionTags])
 
   const rosterSpotlightPlayers = useMemo(() => {
     if (compareRosterId == null) return [] as { p: AggregatedPlayer; label: string }[]
@@ -104,11 +107,11 @@ function WaiverPage() {
       if (sid.startsWith('pick:')) continue
       const p = bySleeperId.get(sid)
       if (!p || p.position === 'PICK') continue
-      if (positionFilter && p.position !== positionFilter) continue
+      if (!passesPositionMultiFilter(p, selectedPositionTags, false)) continue
       out.push({ p, label })
     }
     return out
-  }, [bySleeperId, compareRosterId, leagueSnapshot.rosters, leagueSnapshot.users, positionFilter])
+  }, [bySleeperId, compareRosterId, leagueSnapshot.rosters, leagueSnapshot.users, selectedPositionTags])
 
   const waiverBoardTagged = useMemo(() => {
     const faRows = filteredFa.map((p) => ({ p, label: 'FA' as string }))
@@ -149,6 +152,17 @@ function WaiverPage() {
       }
     })
   }, [metricLane, waiverBoardTagged])
+
+  const sortedLeagueRosterIds = useMemo(
+    () => [...leagueSnapshot.rosters].map((r) => r.rosterId).sort((a, b) => a - b),
+    [leagueSnapshot.rosters],
+  )
+
+  const waiverCompareRowPaint = (poolSource: string) => {
+    if (poolSource === 'FA') return FA_HIGHLIGHT_PARTS
+    if (compareRosterId != null) return rosterHighlightParts(compareRosterId, sortedLeagueRosterIds)
+    return FA_HIGHLIGHT_PARTS
+  }
 
   const numCell = (val: number | null) =>
     val != null ? <span className="tabular-nums">{val.toLocaleString()}</span> : <span className="text-muted-foreground">—</span>
@@ -288,7 +302,6 @@ function WaiverPage() {
   const rowModelRows = table.getRowModel().rows
   const leafColumnCount = table.getVisibleLeafColumns().length
 
-  const positions = ['QB', 'RB', 'WR', 'TE']
   const rosterOptionsSorted = useMemo(() => {
     return [...leagueSnapshot.rosters].sort((a, b) =>
       rosterDisplayName(a, leagueSnapshot.users).localeCompare(
@@ -362,124 +375,133 @@ function WaiverPage() {
 
       <ConsensusIndicatorSettings className="shrink-0 rounded-lg border border-border bg-muted/20 p-3" />
 
-      <Card className="shrink-0">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Top mispricing deltas (FA only)</CardTitle>
-          <p className="text-muted-foreground text-xs">
-            Top 25 FAs by Δ ({lane}). Click any column to sort.
-          </p>
-        </CardHeader>
-        <CardContent className="border-t border-border pt-3">
-          <DeltaTable
-            players={faPlayers}
-            lane={metricLane}
-            percentileReferencePlayers={aggregated}
-            topN={25}
-            leagueId={leagueId}
-          />
-        </CardContent>
-      </Card>
+      <Tabs
+        value={waiverTab}
+        onValueChange={(v) => setWaiverTab(v as 'compare' | 'mispriced')}
+        className="flex min-h-0 flex-1 flex-col gap-3"
+      >
+        <TabsList className="w-fit shrink-0">
+          <TabsTrigger value="compare">Compare</TabsTrigger>
+          <TabsTrigger value="mispriced">Mispriced</TabsTrigger>
+        </TabsList>
 
-      <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <p className="text-muted-foreground text-xs font-medium">Compare to roster</p>
-          <p className="text-muted-foreground text-xs">
-            Pick a team to list its players with free agents in the table below (same search and position filters).
-          </p>
-        </div>
-        <Select
-          value={compareRosterId == null ? 'none' : String(compareRosterId)}
-          onValueChange={(v) => setCompareRosterId(v === 'none' ? null : Number(v))}
-        >
-          <SelectTrigger className="h-9 w-full min-w-[12rem] sm:w-[min(100%,20rem)]">
-            <SelectValue placeholder="Choose roster" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Free agents only</SelectItem>
-            {rosterOptionsSorted.map((r) => (
-              <SelectItem key={r.rosterId} value={String(r.rosterId)}>
-                {rosterDisplayName(r, leagueSnapshot.users)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+        <TabsContent value="mispriced" className="mt-0 shrink-0 outline-none">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Top mispricing deltas (FA only)</CardTitle>
+              <p className="text-muted-foreground text-xs">
+                Top 25 FAs by Δ ({lane}). Click any column to sort.
+              </p>
+            </CardHeader>
+            <CardContent className="border-t border-border pt-3">
+              <DeltaTable
+                players={faPlayers}
+                lane={metricLane}
+                percentileReferencePlayers={aggregated}
+                topN={25}
+                leagueId={leagueId}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search players..."
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-xs min-h-10"
-        />
-        <div className="flex flex-wrap gap-1">
-          <Button
-            variant={positionFilter === null ? 'default' : 'outline'}
-            size="sm"
-            className="min-h-10 sm:min-h-9"
-            onClick={() => setPositionFilter(null)}
-          >
-            All
-          </Button>
-          {positions.map((pos) => (
-            <Button
-              key={pos}
-              variant={positionFilter === pos ? 'default' : 'outline'}
-              size="sm"
-              className="min-h-10 sm:min-h-9"
-              onClick={() => setPositionFilter(pos)}
+        <TabsContent value="compare" className="mt-0 flex min-h-0 flex-1 flex-col gap-3 outline-none">
+          <div className="flex shrink-0 flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <p className="text-muted-foreground text-xs font-medium">Compare to roster</p>
+              <p className="text-muted-foreground text-xs">
+                Pick a team to list its players with free agents in the table below (same search and position
+                filters).
+              </p>
+            </div>
+            <Select
+              value={compareRosterId == null ? 'none' : String(compareRosterId)}
+              onValueChange={(v) => setCompareRosterId(v === 'none' ? null : Number(v))}
             >
-              {pos}
-            </Button>
-          ))}
-        </div>
-      </div>
+              <SelectTrigger className="h-9 w-full min-w-[12rem] sm:w-[min(100%,20rem)]">
+                <SelectValue placeholder="Choose roster" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Free agents only</SelectItem>
+                {rosterOptionsSorted.map((r) => (
+                  <SelectItem key={r.rosterId} value={String(r.rosterId)}>
+                    {rosterDisplayName(r, leagueSnapshot.users)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      <div className="shrink-0 overflow-hidden rounded-md border border-border">
-        <div className="spreadsheet-scroll overflow-x-auto">
-          <table className="w-full min-w-[720px] caption-bottom text-sm spreadsheet-table">
-            <TableHeader className="[&_tr]:border-0">
-              {table.getHeaderGroups().map((hg) => (
-                <TableRow key={hg.id} className="border-0 hover:bg-transparent data-[state=selected]:bg-transparent">
-                  {hg.headers.map((header) => (
-                    <TableHead
-                      key={header.id}
-                      className={cn(
-                        'cursor-pointer select-none whitespace-nowrap text-muted-foreground',
-                        'sticky top-0 z-40 h-10 bg-background px-2 py-1.5',
-                      )}
-                      onClick={header.column.getToggleSortingHandler()}
+          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-3">
+            <Input
+              placeholder="Search players..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="max-w-xs min-h-10"
+            />
+            <PositionMultiFilter selected={selectedPositionTags} onChange={setSelectedPositionTags} />
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border">
+            <div className="spreadsheet-scroll h-full max-h-[min(70vh,720px)] overflow-x-auto overflow-y-auto">
+              <table className="w-full min-w-[720px] caption-bottom text-sm spreadsheet-table">
+                <TableHeader className="[&_tr]:border-0">
+                  {table.getHeaderGroups().map((hg) => (
+                    <TableRow
+                      key={hg.id}
+                      className="border-0 hover:bg-transparent data-[state=selected]:bg-transparent"
                     >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {header.column.getIsSorted() === 'asc' ? ' ↑' : ''}
-                      {header.column.getIsSorted() === 'desc' ? ' ↓' : ''}
-                    </TableHead>
+                      {hg.headers.map((header) => (
+                        <TableHead
+                          key={header.id}
+                          className={cn(
+                            'cursor-pointer select-none whitespace-nowrap text-muted-foreground',
+                            'sticky top-0 z-40 h-10 bg-background px-2 py-1.5',
+                          )}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {header.column.getIsSorted() === 'asc' ? ' ↑' : ''}
+                          {header.column.getIsSorted() === 'desc' ? ' ↓' : ''}
+                        </TableHead>
+                      ))}
+                    </TableRow>
                   ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {rowModelRows.length === 0 ? (
-                <TableRow className="border-0">
-                  <TableCell colSpan={leafColumnCount} className="h-24 text-center text-muted-foreground">
-                    No rows match the current filters.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                rowModelRows.map((row) => (
-                  <TableRow key={row.id} className="border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="whitespace-nowrap">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableHeader>
+                <TableBody>
+                  {rowModelRows.length === 0 ? (
+                    <TableRow className="border-0">
+                      <TableCell colSpan={leafColumnCount} className="h-24 text-center text-muted-foreground">
+                        No rows match the current filters.
                       </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </table>
-        </div>
-      </div>
+                    </TableRow>
+                  ) : (
+                    rowModelRows.map((row) => {
+                      const paint = waiverCompareRowPaint(row.original.poolSource)
+                      return (
+                        <TableRow key={row.id} className="border-0">
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell
+                              key={cell.id}
+                              className={cn(
+                                'whitespace-nowrap',
+                                paint.cellBg,
+                                cell.column.id === 'name' && paint.nameBorder,
+                              )}
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -36,6 +36,8 @@ import {
   writeRankingsGroupVisibilityToStorage,
 } from '@/lib/rankings/rankings-column-visibility'
 import { wideSpreadsheetDataColumnGroups } from '@/lib/rankings/wide-spreadsheet-data-columns'
+import { PositionMultiFilter } from '@/components/rankings/position-multi-filter'
+import { passesPositionMultiFilter } from '@/lib/rankings/position-multi-filter'
 
 function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   const u = users.find((x) => x.userId === roster.ownerId)
@@ -104,6 +106,7 @@ function TeamPage() {
   )
 
   const [teamRosterSortSource, setTeamRosterSortSource] = useState<TeamRosterSortSource>('avg')
+  const [selectedPositionTags, setSelectedPositionTags] = useState<string[]>([])
   const [sorting, setSorting] = useState<SortingState>([
     { id: sortAccessorId(metricLane, 'avg'), desc: true },
   ])
@@ -138,6 +141,11 @@ function TeamPage() {
     }
     return out
   }, [roster.playerIds, bySleeperId, hidePickRows])
+
+  const rosterTableRows = useMemo(
+    () => rosterPlayers.filter((m) => passesPositionMultiFilter(m, selectedPositionTags, false)),
+    [rosterPlayers, selectedPositionTags],
+  )
 
   const depthMap = useMemo(
     () => depthTierByPlayerId(rosterPlayers.filter((p) => !isPick(p)), metricLane),
@@ -227,7 +235,7 @@ function TeamPage() {
   )
 
   const table = useReactTable({
-    data: rosterPlayers,
+    data: rosterTableRows,
     columns,
     state: { sorting, columnVisibility: mergedColumnVisibility },
     onSortingChange: setSorting,
@@ -275,6 +283,10 @@ function TeamPage() {
           {hidePickRows ? ' · no picks' : ''}
         </span>
       </PageSubheader>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-0.5">
+        <PositionMultiFilter selected={selectedPositionTags} onChange={setSelectedPositionTags} />
+      </div>
 
       <div className="flex min-h-0 flex-1 flex-col border border-border">
         <div className="spreadsheet-scroll min-h-0 flex-1 overflow-auto">

@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { PositionMultiFilter } from '@/components/rankings/position-multi-filter'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageSubheader } from '@/components/ui/page-subheader'
@@ -23,8 +24,6 @@ import type { LeagueUser, Roster } from '@/lib/db/schema'
 import type { NormMode } from '@/lib/rankings/player-metrics'
 import type { LeagueRosterSnapshot } from '@/server/functions/sync-sleeper'
 import { cn } from '@/lib/utils'
-
-const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'PICK'] as const
 
 function rosterDisplayName(roster: Roster, users: LeagueUser[]) {
   const u = users.find((x) => x.userId === roster.ownerId)
@@ -87,8 +86,8 @@ export type RankingsToolbarProps = {
   searchLeagueId: string | undefined
   globalFilter: string
   onGlobalFilterChange: (v: string) => void
-  positionFilter: string | null
-  onPositionFilterChange: (v: string | null) => void
+  selectedPositionTags: readonly string[]
+  onSelectedPositionTagsChange: (v: string[]) => void
   normMode: NormMode
   onNormModeChange: (v: NormMode) => void
   hidePickRows: boolean
@@ -97,6 +96,8 @@ export type RankingsToolbarProps = {
   redraftGroupVisible: boolean
   onToggleDynastyColumns: () => void
   onToggleRedraftColumns: () => void
+  laneDiffGroupVisible: boolean
+  onToggleLaneDiffColumns: () => void
   highlightAvailable: boolean
   onHighlightAvailableChange: (v: boolean) => void
   highlightTeamIds: number[]
@@ -108,8 +109,8 @@ export type RankingsToolbarProps = {
 
 function FilterBlock({
   leagueSnapshot,
-  positionFilter,
-  onPositionFilterChange,
+  selectedPositionTags,
+  onSelectedPositionTagsChange,
   normMode,
   onNormModeChange,
   hidePickRows,
@@ -118,6 +119,8 @@ function FilterBlock({
   redraftGroupVisible,
   onToggleDynastyColumns,
   onToggleRedraftColumns,
+  laneDiffGroupVisible,
+  onToggleLaneDiffColumns,
   highlightAvailable,
   onHighlightAvailableChange,
   hideUnhighlighted,
@@ -126,8 +129,8 @@ function FilterBlock({
   direction,
 }: {
   leagueSnapshot: LeagueRosterSnapshot | null
-  positionFilter: string | null
-  onPositionFilterChange: (v: string | null) => void
+  selectedPositionTags: readonly string[]
+  onSelectedPositionTagsChange: (v: string[]) => void
   normMode: NormMode
   onNormModeChange: (v: NormMode) => void
   hidePickRows: boolean
@@ -136,6 +139,8 @@ function FilterBlock({
   redraftGroupVisible: boolean
   onToggleDynastyColumns: () => void
   onToggleRedraftColumns: () => void
+  laneDiffGroupVisible: boolean
+  onToggleLaneDiffColumns: () => void
   highlightAvailable: boolean
   onHighlightAvailableChange: (v: boolean) => void
   hideUnhighlighted: boolean
@@ -146,22 +151,11 @@ function FilterBlock({
   const rowCls = 'flex flex-wrap items-center gap-2'
   return (
     <div className={direction === 'row' ? rowCls : 'flex flex-col gap-3'}>
-      <Select
-        value={positionFilter ?? 'all'}
-        onValueChange={(v) => onPositionFilterChange(v === 'all' ? null : v)}
-      >
-        <SelectTrigger size="sm" className="h-8 w-[6.5rem]">
-          <SelectValue placeholder="Position" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All</SelectItem>
-          {POSITIONS.map((pos) => (
-            <SelectItem key={pos} value={pos}>
-              {pos}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <PositionMultiFilter
+        selected={selectedPositionTags}
+        onChange={onSelectedPositionTagsChange}
+        size="sm"
+      />
 
       <div className={cn(rowCls, direction === 'column' && 'border-border border-t pt-2')}>
         <span className="text-muted-foreground text-xs">Scale</span>
@@ -215,6 +209,16 @@ function FilterBlock({
         >
           Redraft
         </Button>
+        <Button
+          type="button"
+          variant={laneDiffGroupVisible ? 'default' : 'outline'}
+          size="sm"
+          className="h-8"
+          title="Dyn − Rd normalized deltas"
+          onClick={onToggleLaneDiffColumns}
+        >
+          Dyn − Rd
+        </Button>
       </div>
 
       {leagueSnapshot ? (
@@ -257,8 +261,8 @@ export function RankingsToolbar({
   searchLeagueId,
   globalFilter,
   onGlobalFilterChange,
-  positionFilter,
-  onPositionFilterChange,
+  selectedPositionTags,
+  onSelectedPositionTagsChange,
   normMode,
   onNormModeChange,
   hidePickRows,
@@ -267,6 +271,8 @@ export function RankingsToolbar({
   redraftGroupVisible,
   onToggleDynastyColumns,
   onToggleRedraftColumns,
+  laneDiffGroupVisible,
+  onToggleLaneDiffColumns,
   highlightAvailable,
   onHighlightAvailableChange,
   highlightTeamIds,
@@ -321,8 +327,8 @@ export function RankingsToolbar({
   const filterPanel = (
     <FilterBlock
       leagueSnapshot={leagueSnapshot}
-      positionFilter={positionFilter}
-      onPositionFilterChange={onPositionFilterChange}
+      selectedPositionTags={selectedPositionTags}
+      onSelectedPositionTagsChange={onSelectedPositionTagsChange}
       normMode={normMode}
       onNormModeChange={onNormModeChange}
       hidePickRows={hidePickRows}
@@ -331,6 +337,8 @@ export function RankingsToolbar({
       redraftGroupVisible={redraftGroupVisible}
       onToggleDynastyColumns={onToggleDynastyColumns}
       onToggleRedraftColumns={onToggleRedraftColumns}
+      laneDiffGroupVisible={laneDiffGroupVisible}
+      onToggleLaneDiffColumns={onToggleLaneDiffColumns}
       highlightAvailable={highlightAvailable}
       onHighlightAvailableChange={onHighlightAvailableChange}
       hideUnhighlighted={hideUnhighlighted}
@@ -433,8 +441,8 @@ export function RankingsToolbar({
             <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
               <FilterBlock
                 leagueSnapshot={leagueSnapshot}
-                positionFilter={positionFilter}
-                onPositionFilterChange={onPositionFilterChange}
+                selectedPositionTags={selectedPositionTags}
+                onSelectedPositionTagsChange={onSelectedPositionTagsChange}
                 normMode={normMode}
                 onNormModeChange={onNormModeChange}
                 hidePickRows={hidePickRows}
@@ -443,6 +451,8 @@ export function RankingsToolbar({
                 redraftGroupVisible={redraftGroupVisible}
                 onToggleDynastyColumns={onToggleDynastyColumns}
                 onToggleRedraftColumns={onToggleRedraftColumns}
+                laneDiffGroupVisible={laneDiffGroupVisible}
+                onToggleLaneDiffColumns={onToggleLaneDiffColumns}
                 highlightAvailable={highlightAvailable}
                 onHighlightAvailableChange={onHighlightAvailableChange}
                 hideUnhighlighted={hideUnhighlighted}
