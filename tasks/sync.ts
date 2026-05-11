@@ -1,19 +1,94 @@
 import { defineTask } from 'nitro/task'
-import { resolve } from 'path'
-import { mkdir, writeFile, readFile } from 'fs/promises'
-import { existsSync } from 'fs'
+import { getDb } from '../app/lib/db/connection'
+import type { SleeperPlayer, PlayerValue, SyncMetadata } from '../app/lib/db/schema'
 
-const DATA_DIR = resolve(process.cwd(), 'data')
-
-async function ensureDir(dir: string) {
-  if (!existsSync(dir)) await mkdir(dir, { recursive: true })
+function esc(val: string): string {
+  return `'${val.replace(/'/g, "''")}'`
+}
+function escNull(val: string | null): string {
+  return val === null ? 'NULL' : esc(val)
+}
+function escNum(val: number | null | undefined): string {
+  return val === null || val === undefined ? 'NULL' : String(val)
 }
 
-async function writeJson(relativePath: string, data: unknown) {
-  const fullPath = resolve(DATA_DIR, relativePath)
-  await ensureDir(resolve(fullPath, '..'))
-  await writeFile(fullPath, JSON.stringify(data, null, 2))
-  console.log(`  Written: ${relativePath}`)
+async function upsertPlayers(players: SleeperPlayer[]) {
+  const sql = getDb()
+  const BATCH_SIZE = 500
+
+  for (let i = 0; i < players.length; i += BATCH_SIZE) {
+    const batch = players.slice(i, i + BATCH_SIZE)
+    const values = batch
+      .map(
+        (p) =>
+          `(${esc(p.playerId)}, ${esc(p.firstName)}, ${esc(p.lastName)}, ${escNull(p.team)}, ${escNull(p.position)}, ${escNum(p.age)}, ${escNum(p.yearsExp)}, ${esc(p.searchFullName)}, ${escNull(p.status)})`,
+      )
+      .join(',\n')
+
+    await sql.query(`
+      INSERT INTO players (player_id, first_name, last_name, team, position, age, years_exp, search_full_name, status)
+      VALUES ${values}
+      ON CONFLICT (player_id) DO UPDATE SET
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        team = EXCLUDED.team,
+        position = EXCLUDED.position,
+        age = EXCLUDED.age,
+        years_exp = EXCLUDED.years_exp,
+        search_full_name = EXCLUDED.search_full_name,
+        status = EXCLUDED.status
+    `)
+  }
+}
+
+async function writeAllValues(values: PlayerValue[]) {
+  const sql = getDb()
+  await sql`TRUNCATE player_values`
+  const BATCH_SIZE = 500
+
+  for (let i = 0; i < values.length; i += BATCH_SIZE) {
+    const batch = values.slice(i, i + BATCH_SIZE)
+    const rows = batch
+      .map(
+        (v) =>
+          `(${esc(v.id)}, ${esc(v.sleeperId)}, ${esc(v.sourceId)}, ${v.value}, ${v.normalizedValue}, ${escNum(v.normalizedValueQm)}, ${escNum(v.overallRank)}, ${escNum(v.positionRank)}, ${escNum(v.trend)}, ${escNum(v.tierAvg)}, ${escNum(v.tierFc)}, ${escNum(v.tierKtc)}, ${escNum(v.tierDd)}, ${esc(v.updatedAt)})`,
+      )
+      .join(',\n')
+
+    await sql.query(`
+      INSERT INTO player_values (id, sleeper_id, source_id, value, normalized_value, normalized_value_qm, overall_rank, position_rank, trend, tier_avg, tier_fc, tier_ktc, tier_dd, updated_at)
+      VALUES ${rows}
+      ON CONFLICT (id) DO UPDATE SET
+        sleeper_id = EXCLUDED.sleeper_id,
+        source_id = EXCLUDED.source_id,
+        value = EXCLUDED.value,
+        normalized_value = EXCLUDED.normalized_value,
+        normalized_value_qm = EXCLUDED.normalized_value_qm,
+        overall_rank = EXCLUDED.overall_rank,
+        position_rank = EXCLUDED.position_rank,
+        trend = EXCLUDED.trend,
+        tier_avg = EXCLUDED.tier_avg,
+        tier_fc = EXCLUDED.tier_fc,
+        tier_ktc = EXCLUDED.tier_ktc,
+        tier_dd = EXCLUDED.tier_dd,
+        updated_at = EXCLUDED.updated_at
+    `)
+  }
+}
+
+async function writeSyncMetadata(metadata: Record<string, SyncMetadata>) {
+  const sql = getDb()
+  for (const [sourceId, meta] of Object.entries(metadata)) {
+    await sql`
+      INSERT INTO sync_metadata (source_id, last_synced_at, status, error, record_count)
+      VALUES (${sourceId}, ${meta.lastSyncedAt}, ${meta.status}, ${meta.error}, ${meta.recordCount})
+      ON CONFLICT (source_id) DO UPDATE SET
+        last_synced_at = EXCLUDED.last_synced_at,
+        status = EXCLUDED.status,
+        error = EXCLUDED.error,
+        record_count = EXCLUDED.record_count
+    `
+  }
 }
 
 async function syncSleeperPlayers() {
@@ -34,7 +109,7 @@ async function syncSleeperPlayers() {
   }
 
   const raw = await fetchAllPlayers()
-  const players = Object.values(raw as Record<string, SleeperApiPlayer>)
+  const players: SleeperPlayer[] = Object.values(raw as Record<string, SleeperApiPlayer>)
     .filter((p) => p.sport === 'nfl' || p.position !== null)
     .map((p) => ({
       playerId: p.player_id,
@@ -48,12 +123,12 @@ async function syncSleeperPlayers() {
       status: p.status,
     }))
 
-  await writeJson('players.json', players)
-  console.log(`[Sync Task] Saved ${players.length} players`)
+  await upsertPlayers(players)
+  console.log(`[Sync Task] Saved ${players.length} players to Neon`)
   return players
 }
 
-async function syncFantasyCalcBoth(players: any[]) {
+async function syncFantasyCalcBoth(players: SleeperPlayer[]) {
   console.log('\n[Sync Task] Fetching FantasyCalc dynasty + redraft...')
   const { FantasyCalcProvider } = await import('../app/lib/sources/fantasycalc/provider')
   const { resolveValues } = await import('../app/lib/sync/resolve-values')
@@ -77,7 +152,7 @@ async function syncFantasyCalcBoth(players: any[]) {
   }
 }
 
-async function syncKtcBoth(players: any[]) {
+async function syncKtcBoth(players: SleeperPlayer[]) {
   console.log('\n[Sync Task] Scraping KTC dynasty + redraft...')
   const { KtcProvider } = await import('../app/lib/sources/ktc/provider')
   const { resolveValues } = await import('../app/lib/sync/resolve-values')
@@ -106,7 +181,7 @@ async function syncKtcBoth(players: any[]) {
   }
 }
 
-async function syncDynastyDaddyBoth(players: any[]) {
+async function syncDynastyDaddyBoth(players: SleeperPlayer[]) {
   console.log('\n[Sync Task] Fetching Dynasty Daddy dynasty + redraft...')
   const { DynastyDaddyProvider } = await import('../app/lib/sources/dynasty-daddy/provider')
   const { resolveValues } = await import('../app/lib/sync/resolve-values')
@@ -141,8 +216,7 @@ export default defineTask({
   },
   async run() {
     console.log('=== Fantasy Sync Task ===')
-    console.log(`Data directory: ${DATA_DIR}`)
-    await ensureDir(DATA_DIR)
+    console.log('[Sync Task] Writing to Neon Postgres')
 
     const players = await syncSleeperPlayers()
 
@@ -175,12 +249,10 @@ export default defineTask({
 
     const mergedResolved = [...fcResult.resolved, ...ktcResult.resolved, ...ddResult.resolved]
     const allResolved = assignTierDimensions(applyQuantileMatchedNorms(mergedResolved))
-    const allUnresolved = [...fcResult.unresolved, ...ktcResult.unresolved, ...ddResult.unresolved]
 
-    await writeJson('values.json', allResolved)
-    await writeJson('unresolved.json', allUnresolved)
+    await writeAllValues(allResolved)
 
-    const metadata: Record<string, any> = {
+    const metadata: Record<string, SyncMetadata> = {
       sleeper_players: {
         lastSyncedAt: new Date().toISOString(),
         sourceId: 'sleeper_players',
@@ -240,19 +312,17 @@ export default defineTask({
       },
     }
 
-    await writeJson('sync-metadata.json', metadata)
+    await writeSyncMetadata(metadata)
 
     const summary = {
       players: players.length,
       values: allResolved.length,
-      unresolved: allUnresolved.length,
       syncedAt: new Date().toISOString(),
     }
 
     console.log('\n=== Sync Task Complete ===')
     console.log(`  Players: ${summary.players}`)
     console.log(`  Values:  ${summary.values}`)
-    console.log(`  Unresolved: ${summary.unresolved}`)
 
     return { result: summary }
   },
