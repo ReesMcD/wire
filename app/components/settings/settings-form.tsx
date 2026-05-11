@@ -22,7 +22,25 @@ import {
   DEFAULT_DEPTH_WEIGHTS,
   type DepthTier,
 } from '@/lib/rankings/league-board-power-input'
-import { explainNormMode, explainPortfolioShare, explainPowerMode, explainScoreDisplay, poolLabel } from '@/lib/rankings/explain'
+import {
+  explainNormMode,
+  explainPortfolioShare,
+  explainPowerMode,
+  explainScoreDisplay,
+  explainSettingsClearLeague,
+  explainSettingsConsensusIntro,
+  explainSettingsDepthWeightsRow,
+  explainSettingsHidePickRows,
+  explainSettingsLaneSourceToggles,
+  explainSettingsLeaguePowerIntro,
+  explainSettingsNormalizationIntro,
+  explainSettingsRankingsColumnsIntro,
+  explainSettingsRankingsLeagueIntro,
+  explainSettingsRefreshRosters,
+  explainSettingsSaveOpenRankings,
+  explainSettingsSimilarityIncludePicks,
+  poolLabel,
+} from '@/lib/rankings/explain'
 import { ConsensusIndicatorSettings } from '@/components/league/consensus-indicator-settings'
 
 function clampWeight(n: number): number {
@@ -132,6 +150,7 @@ export function SettingsForm({ className }: { className?: string }) {
       <div className="space-y-6">
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Rankings league (Sleeper)</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">{explainSettingsRankingsLeagueIntro()}</p>
           <p className="text-muted-foreground text-sm">
             Used for rankings highlights and roster refresh. After saving, open Rankings with this league loaded.
           </p>
@@ -145,31 +164,45 @@ export function SettingsForm({ className }: { className?: string }) {
                 placeholder="From league URL…"
               />
             </div>
-            <Button
-              type="button"
-              onClick={() => {
-                persistLeagueId(leagueDraft)
-                void router.navigate({ to: '/rankings', search: { leagueId: leagueDraft.trim() || undefined } })
-              }}
-            >
-              Save & open rankings
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setLeagueDraft('')
-                persistLeagueId('')
-                void router.navigate({ to: '/rankings', search: { leagueId: undefined } })
-              }}
-            >
-              Clear
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!rankingsDefaultLeagueId.trim() || leagueBusy}
-              onClick={() => {
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    persistLeagueId(leagueDraft)
+                    void router.navigate({ to: '/rankings', search: { leagueId: leagueDraft.trim() || undefined } })
+                  }}
+                >
+                  Save & open rankings
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs leading-snug">
+                {explainSettingsSaveOpenRankings()}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setLeagueDraft('')
+                    persistLeagueId('')
+                    void router.navigate({ to: '/rankings', search: { leagueId: undefined } })
+                  }}
+                >
+                  Clear
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs leading-snug">{explainSettingsClearLeague()}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!rankingsDefaultLeagueId.trim() || leagueBusy}
+                  onClick={() => {
                 void (async () => {
                   const id = rankingsDefaultLeagueId.trim()
                   if (!id) return
@@ -192,6 +225,11 @@ export function SettingsForm({ className }: { className?: string }) {
               <RefreshCw className={cn('mr-2 size-4', leagueBusy && 'animate-spin')} />
               Refresh rosters
             </Button>
+            </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs leading-snug">
+                {explainSettingsRefreshRosters()}
+              </TooltipContent>
+            </Tooltip>
           </div>
           <p className="text-muted-foreground text-xs">
             Current:{' '}
@@ -209,6 +247,7 @@ export function SettingsForm({ className }: { className?: string }) {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Normalization scale</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">{explainSettingsNormalizationIntro()}</p>
           <p className="text-muted-foreground text-sm">
             How raw source values are scaled before comparing across FantasyCalc, KTC, and Daddy Data.
           </p>
@@ -244,6 +283,7 @@ export function SettingsForm({ className }: { className?: string }) {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Consensus indicator (FC + DD vs KTC)</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">{explainSettingsConsensusIntro()}</p>
           <ConsensusIndicatorSettings />
         </section>
 
@@ -251,6 +291,7 @@ export function SettingsForm({ className }: { className?: string }) {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">League power rankings</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">{explainSettingsLeaguePowerIntro()}</p>
           <p className="text-muted-foreground text-sm">
             Pool tier toggles stay on the league overview page; these control how power numbers are computed and
             displayed on badges.
@@ -284,6 +325,7 @@ export function SettingsForm({ className }: { className?: string }) {
 
           {powerMode === 'depthWeighted' && (
             <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-muted-foreground w-full text-xs leading-relaxed">{explainSettingsDepthWeightsRow()}</p>
               <span className="text-muted-foreground text-xs font-medium">Depth weights</span>
               {(['starter', 'backup', 'bench'] as const).map((tier) => (
                 <label key={tier} className="flex flex-col gap-0.5 text-xs">
@@ -369,6 +411,7 @@ export function SettingsForm({ className }: { className?: string }) {
 
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Rankings table columns</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">{explainSettingsRankingsColumnsIntro()}</p>
           <p className="text-muted-foreground text-sm">
             Choose which source blocks appear in the wide spreadsheet on the Rankings page.
           </p>
@@ -384,6 +427,7 @@ export function SettingsForm({ className }: { className?: string }) {
             sources={srcVis.redraft}
             onChange={(redraft) => setSrcVis((prev) => ({ ...prev, redraft }))}
           />
+          <p className="text-muted-foreground text-xs leading-relaxed">{explainSettingsLaneSourceToggles()}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Label className="text-muted-foreground text-sm">Hide pick rows (rankings / roster lists)</Label>
             <Button
@@ -395,6 +439,7 @@ export function SettingsForm({ className }: { className?: string }) {
               {hidePickRows ? 'On' : 'Off'}
             </Button>
           </div>
+          <p className="text-muted-foreground text-xs leading-relaxed">{explainSettingsHidePickRows()}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Label className="text-muted-foreground text-sm">Similarity lists include picks</Label>
             <Button
@@ -406,14 +451,21 @@ export function SettingsForm({ className }: { className?: string }) {
               {similarityIncludePicks ? 'On' : 'Off'}
             </Button>
           </div>
+          <p className="text-muted-foreground text-xs leading-relaxed">{explainSettingsSimilarityIncludePicks()}</p>
         </section>
 
         <Separator />
 
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="destructive" size="sm" onClick={() => resetAll()}>
-            Reset all settings
-          </Button>
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Reset restores every saved preference on this page (league ID, norms, consensus, power, column visibility,
+            toggles) to the app defaults. It does not delete synced database data.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="destructive" size="sm" onClick={() => resetAll()}>
+              Reset all settings
+            </Button>
+          </div>
         </div>
       </div>
     </div>

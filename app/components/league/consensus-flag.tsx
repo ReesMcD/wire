@@ -2,52 +2,36 @@ import { TrendingUp, TrendingDown } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { MetricLane } from '@/lib/rankings/league-board-power-input'
-import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
 import type { ConsensusThresholdMode } from '@/lib/rankings/consensus-threshold'
 import { passesConsensusIndicator, consensusNormSign } from '@/lib/rankings/consensus-threshold'
 import { explainConsensusIconSummary } from '@/lib/rankings/explain'
 import { useUiSettings } from '@/lib/stores/ui-settings'
 
 export interface ConsensusIndicatorLineProps {
-  lane: MetricLane
   minAbsDeltaPercentileCutoff: number | null
   deltaFc: number | null | undefined
   deltaDd: number | null | undefined
-  player: AggregatedPlayer | null | undefined
   laneLabel: string
   mode: ConsensusThresholdMode
-  rankMinGap: number
   percentile: number
-  signMinNormDiff: number
+  agreementMinEach: number
   /** Omit leading icon when the trigger already shows the same icon (e.g. ConsensusFlag popover). */
   leadIcon?: boolean
 }
 
 /** FC+DD vs KTC agreement line: optional icon + explanation, or muted “no signal”. For use inside larger tooltips. */
 export function ConsensusIndicatorLine({
-  lane,
   minAbsDeltaPercentileCutoff,
   deltaFc,
   deltaDd,
-  player,
   laneLabel,
   mode,
-  rankMinGap,
   percentile,
-  signMinNormDiff,
+  agreementMinEach,
   leadIcon = true,
 }: ConsensusIndicatorLineProps) {
   const dir = consensusNormSign(deltaFc, deltaDd)
-  const passes = passesConsensusIndicator(
-    player ?? null,
-    lane,
-    deltaFc,
-    deltaDd,
-    mode,
-    rankMinGap,
-    minAbsDeltaPercentileCutoff,
-    signMinNormDiff,
-  )
+  const passes = passesConsensusIndicator(deltaFc, deltaDd, mode, minAbsDeltaPercentileCutoff, agreementMinEach)
   if (!dir || !passes) {
     return (
       <p className="text-muted-foreground text-[11px] leading-snug">
@@ -66,11 +50,10 @@ export function ConsensusIndicatorLine({
   const mainLine = `${laneLabel}: FC and DD both value this player ${directionWord} than KTC (Δ FC ${formatDelta(deltaFc)}, Δ DD ${formatDelta(deltaDd)}). Two sources agree KTC may be ${subjectWord}.`
   const summary = explainConsensusIconSummary({
     mode,
-    rankMinGap,
     percentile,
     percentileCutoff: minAbsDeltaPercentileCutoff,
     laneLabel,
-    signMinNormDiff,
+    agreementMinEach,
   })
 
   const body = <p className="text-[11px] leading-snug">{mainLine}</p>
@@ -96,8 +79,6 @@ interface ConsensusFlagProps {
   minAbsDeltaPercentileCutoff: number | null
   deltaFc: number | null | undefined
   deltaDd: number | null | undefined
-  /** Required for rank mode; optional for percentile / sign (still used for richer tooltip when present). */
-  player?: AggregatedPlayer | null
   /** Optional lane tag rendered next to the icon (e.g. "Dyn", "Rd"). */
   laneLabel?: string
   className?: string
@@ -108,32 +89,21 @@ function formatDelta(n: number | null | undefined): string {
   return n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString()
 }
 
-/** Icon when FC and DD agree vs KTC, gated by persisted rank / percentile / sign rules. */
+/** Icon when FC and DD agree vs KTC, gated by persisted percentile / agreement rules. */
 export function ConsensusFlag({
   lane,
   minAbsDeltaPercentileCutoff,
   deltaFc,
   deltaDd,
-  player,
   laneLabel,
   className,
 }: ConsensusFlagProps) {
   const mode = useUiSettings((s) => s.consensusThresholdMode)
-  const rankMinGap = useUiSettings((s) => s.consensusRankMinGap)
   const percentile = useUiSettings((s) => s.consensusPercentile)
-  const signMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
+  const agreementMinEach = useUiSettings((s) => s.consensusMinNormDiff)
 
   const dir = consensusNormSign(deltaFc, deltaDd)
-  const passes = passesConsensusIndicator(
-    player ?? null,
-    lane,
-    deltaFc,
-    deltaDd,
-    mode,
-    rankMinGap,
-    minAbsDeltaPercentileCutoff,
-    signMinNormDiff,
-  )
+  const passes = passesConsensusIndicator(deltaFc, deltaDd, mode, minAbsDeltaPercentileCutoff, agreementMinEach)
   if (!dir || !passes) return null
 
   const Icon = dir === 'higher' ? TrendingUp : TrendingDown
@@ -160,16 +130,13 @@ export function ConsensusFlag({
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
         <ConsensusIndicatorLine
-          lane={lane}
           minAbsDeltaPercentileCutoff={minAbsDeltaPercentileCutoff}
           deltaFc={deltaFc}
           deltaDd={deltaDd}
-          player={player}
           laneLabel={laneLabel ?? (lane === 'dynasty' ? 'Dynasty' : 'Redraft')}
           mode={mode}
-          rankMinGap={rankMinGap}
           percentile={percentile}
-          signMinNormDiff={signMinNormDiff}
+          agreementMinEach={agreementMinEach}
           leadIcon={false}
         />
       </TooltipContent>

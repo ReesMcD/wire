@@ -192,7 +192,6 @@ function TeamPage() {
                 minAbsDeltaPercentileCutoff={dynConsensusCutoff}
                 deltaFc={row.original.dynDeltaNormFcVsKtc}
                 deltaDd={row.original.dynDeltaNormDdVsKtc}
-                player={row.original}
                 laneLabel="Dyn"
                 className="shrink-0"
               />
@@ -201,7 +200,6 @@ function TeamPage() {
                 minAbsDeltaPercentileCutoff={rdConsensusCutoff}
                 deltaFc={row.original.rdDeltaNormFcVsKtc}
                 deltaDd={row.original.rdDeltaNormDdVsKtc}
-                player={row.original}
                 laneLabel="Rd"
                 className="shrink-0"
               />

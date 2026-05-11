@@ -62,13 +62,13 @@ interface UiSettingsState {
   similarityIncludePicks: boolean
   /** Optional “my team” per Sleeper league id (roster id). */
   myRosterIdByLeagueId: Record<string, number>
-  /** How strictly to show the FC+DD vs KTC agreement icon (rank spots vs adaptive norm tail). */
+  /** How strictly to show the FC+DD vs KTC agreement icon (percentile vs fixed per-source floor). */
   consensusThresholdMode: ConsensusThresholdMode
-  /** Rank mode: min(|FC rank − KTC|, |DD rank − KTC|) must be ≥ this (lower rank # = better). */
+  /** Legacy rank-gap setting (unused); kept for persisted JSON compatibility. */
   consensusRankMinGap: number
   /** Percentile mode: cutoff = this percentile of min(|Δ FC|, |Δ DD|) over all non-pick players with both deltas. */
   consensusPercentile: number
-  /** Sign mode: require min(|Δ FC|,|Δ DD|) ≥ this (0 = any same-sign non-zero pair). */
+  /** Agreement mode: require |Δ FC| ≥ this and |Δ DD| ≥ this (same sign vs KTC); 0 = any same-sign non-zero pair. */
   consensusMinNormDiff: number
   /** Collapsed filter toolbars (single row + “Filters” on mobile). */
   rankingsFiltersCollapsed: boolean
@@ -151,7 +151,7 @@ const DEFAULTS: Omit<
   powerIncludePicks: true,
   similarityIncludePicks: true,
   myRosterIdByLeagueId: {},
-  consensusThresholdMode: 'rank',
+  consensusThresholdMode: 'agreement',
   consensusRankMinGap: 20,
   consensusPercentile: 90,
   consensusMinNormDiff: 0,
@@ -303,8 +303,10 @@ function migratePersistedToV3(raw: unknown): Partial<UiSettingsState> {
   }
 
   let consensusMode = s.consensusThresholdMode
-  if (consensusMode === 'all') consensusMode = 'sign'
-  if (consensusMode === 'rank' || consensusMode === 'percentile' || consensusMode === 'sign') {
+  if (consensusMode === 'all' || consensusMode === 'rank' || consensusMode === 'sign') {
+    consensusMode = 'agreement'
+  }
+  if (consensusMode === 'percentile' || consensusMode === 'agreement') {
     out.consensusThresholdMode = consensusMode
   }
   if (typeof s.consensusRankMinGap === 'number' && Number.isFinite(s.consensusRankMinGap)) {
@@ -356,7 +358,10 @@ export const useUiSettings = create<UiSettingsState>()(
           else next[leagueId] = rosterId
           return { myRosterIdByLeagueId: next }
         }),
-      setConsensusThresholdMode: (v) => set({ consensusThresholdMode: v }),
+      setConsensusThresholdMode: (v) =>
+        set({
+          consensusThresholdMode: v === 'percentile' || v === 'agreement' ? v : 'agreement',
+        }),
       setConsensusRankMinGap: (v) =>
         set({
           consensusRankMinGap: Number.isFinite(v) ? Math.max(1, Math.min(200, Math.round(v))) : 20,
@@ -379,7 +384,7 @@ export const useUiSettings = create<UiSettingsState>()(
     }),
     {
       name: 'fantasy-ui-settings',
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted, fromVersion) => {
@@ -432,6 +437,12 @@ export const useUiSettings = create<UiSettingsState>()(
           const d = merged.leagueOverviewDisplayNormSource
           merged.leagueOverviewDisplayNormSource =
             d === 'avg' || d === 'ktc' || d === 'fc' || d === 'dd' ? d : 'avg'
+        }
+
+        if (v < 7) {
+          const m = merged.consensusThresholdMode
+          if (m === 'rank' || m === 'sign' || m === 'all') merged.consensusThresholdMode = 'agreement'
+          else if (m !== 'percentile' && m !== 'agreement') merged.consensusThresholdMode = 'agreement'
         }
 
         const partial = migratePersistedToV3(merged)

@@ -407,7 +407,6 @@ function RankingsPage() {
                 minAbsDeltaPercentileCutoff={dynConsensusCutoff}
                 deltaFc={p.dynDeltaNormFcVsKtc}
                 deltaDd={p.dynDeltaNormDdVsKtc}
-                player={p}
                 laneLabel="Dyn"
                 className="shrink-0"
               />
@@ -416,7 +415,6 @@ function RankingsPage() {
                 minAbsDeltaPercentileCutoff={rdConsensusCutoff}
                 deltaFc={p.rdDeltaNormFcVsKtc}
                 deltaDd={p.rdDeltaNormDdVsKtc}
-                player={p}
                 laneLabel="Rd"
                 className="shrink-0"
               />

@@ -114,8 +114,6 @@ export function DeltaTable({
     () => computeMinAbsDeltaPercentileCutoff(refPool, lane, consensusPct),
     [refPool, lane, consensusPct],
   )
-  const bySleeperId = useMemo(() => new Map(players.map((p) => [p.sleeperId, p])), [players])
-
   const [sorting, setSorting] = useState<SortingState>([
     { id: String(defaultSortId), desc: defaultSortDesc },
   ])
@@ -151,7 +149,6 @@ export function DeltaTable({
             )}
             <ConsensusFlag
               lane={lane}
-              player={bySleeperId.get(row.original.sleeperId)}
               minAbsDeltaPercentileCutoff={consensusCutoff}
               deltaFc={row.original.deltaFc}
               deltaDd={row.original.deltaDd}
@@ -198,7 +195,7 @@ export function DeltaTable({
         sortUndefined: 'last',
       },
     ],
-    [lane, consensusCutoff, bySleeperId, leagueId],
+    [lane, consensusCutoff, leagueId],
   )
 
   const table = useReactTable({

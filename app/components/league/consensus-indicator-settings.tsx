@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { Info } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -11,23 +11,53 @@ import {
   explainConsensusModeTooltip,
   explainConsensusModesOverview,
   explainConsensusPercentile,
-  explainConsensusRankMinGap,
 } from '@/lib/rankings/explain'
+
+function useDraftIntField(storeValue: number, onCommit: (n: number) => void) {
+  const [focused, setFocused] = useState(false)
+  const [draft, setDraft] = useState(() => String(storeValue))
+
+  useEffect(() => {
+    if (!focused) setDraft(String(storeValue))
+  }, [storeValue, focused])
+
+  return {
+    inputProps: {
+      value: draft,
+      onFocus: () => {
+        setFocused(true)
+        setDraft(String(storeValue))
+      },
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value),
+      onBlur: () => {
+        setFocused(false)
+        const n = Number.parseInt(draft.trim(), 10)
+        if (!Number.isNaN(n)) onCommit(n)
+        else setDraft(String(storeValue))
+      },
+    },
+  }
+}
 
 /** Global controls for the FC+DD vs KTC agreement icon (persisted). */
 export function ConsensusIndicatorSettings({ className }: { className?: string }) {
   const mode = useUiSettings((s) => s.consensusThresholdMode)
   const setMode = useUiSettings((s) => s.setConsensusThresholdMode)
-  const rankMinGap = useUiSettings((s) => s.consensusRankMinGap)
-  const setRankMinGap = useUiSettings((s) => s.setConsensusRankMinGap)
   const percentile = useUiSettings((s) => s.consensusPercentile)
   const setPercentile = useUiSettings((s) => s.setConsensusPercentile)
-  const signMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
-  const setSignMinNormDiff = useUiSettings((s) => s.setConsensusMinNormDiff)
+  const agreementMinEach = useUiSettings((s) => s.consensusMinNormDiff)
+  const setAgreementMinEach = useUiSettings((s) => s.setConsensusMinNormDiff)
   const [helpOpen, setHelpOpen] = useState(false)
+
+  const pctlDraft = useDraftIntField(percentile, setPercentile)
+  const agreeDraft = useDraftIntField(agreementMinEach, setAgreementMinEach)
 
   return (
     <div className={className}>
+      <p className="text-muted-foreground mb-2 max-w-2xl text-xs leading-relaxed">
+        The arrow icon means FantasyCalc and Daddy Data both disagree with KTC the same way (both higher or both
+        lower on normalized values). Choose how strong that disagreement must be before we show the icon.
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
           <span className="text-muted-foreground text-sm">FC+DD vs KTC icon:</span>
@@ -45,17 +75,14 @@ export function ConsensusIndicatorSettings({ className }: { className?: string }
             </PopoverTrigger>
             <PopoverContent className="w-[min(calc(100vw-2rem),22rem)] space-y-3 p-3" align="start">
               <p className="text-sm leading-snug">{explainConsensusModesOverview()}</p>
-              <ul className="text-muted-foreground list-inside list-disc space-y-1.5 text-xs leading-snug">
-                <li>
-                  <span className="font-medium text-foreground">Rank gap</span> — {explainConsensusModeTooltip('rank')}
-                </li>
+              <ul className="text-muted-foreground list-inside list-disc space-y-2 text-xs leading-relaxed">
                 <li>
                   <span className="font-medium text-foreground">Percentile</span> —{' '}
-                  {explainConsensusModeTooltip('percentile')} Pctl field sets the pool percentile (also in Settings).
+                  {explainConsensusModeTooltip('percentile')}
                 </li>
                 <li>
-                  <span className="font-medium text-foreground">Sign</span> — {explainConsensusModeTooltip('sign')} Min
-                  Δ field sets the floor on min(|Δ FC|,|Δ DD|).
+                  <span className="font-medium text-foreground">Agreement</span> —{' '}
+                  {explainConsensusModeTooltip('agreement')}
                 </li>
               </ul>
               <p className="text-muted-foreground border-t border-border pt-2 text-xs">
@@ -71,22 +98,6 @@ export function ConsensusIndicatorSettings({ className }: { className?: string }
             </PopoverContent>
           </Popover>
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant={mode === 'rank' ? 'default' : 'outline'}
-              className="min-h-9"
-              onClick={() => setMode('rank')}
-            >
-              Rank gap
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-xs text-xs leading-snug">
-            {explainConsensusModeTooltip('rank')}
-          </TooltipContent>
-        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -108,38 +119,17 @@ export function ConsensusIndicatorSettings({ className }: { className?: string }
             <Button
               type="button"
               size="sm"
-              variant={mode === 'sign' ? 'default' : 'outline'}
+              variant={mode === 'agreement' ? 'default' : 'outline'}
               className="min-h-9"
-              onClick={() => setMode('sign')}
+              onClick={() => setMode('agreement')}
             >
-              Sign
+              Agreement
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs text-xs leading-snug">
-            {explainConsensusModeTooltip('sign')}
+            {explainConsensusModeTooltip('agreement')}
           </TooltipContent>
         </Tooltip>
-        {mode === 'rank' ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <label className="flex items-center gap-1.5 text-sm">
-                <span className="text-muted-foreground whitespace-nowrap">Min gap</span>
-                <Input
-                  className="h-8 w-14 px-1 text-center font-mono text-xs"
-                  inputMode="numeric"
-                  value={String(rankMinGap)}
-                  onChange={(e) => {
-                    const n = Number.parseInt(e.target.value, 10)
-                    if (!Number.isNaN(n)) setRankMinGap(n)
-                  }}
-                />
-              </label>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs leading-snug">
-              {explainConsensusRankMinGap(rankMinGap)}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
         {mode === 'percentile' ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -148,11 +138,7 @@ export function ConsensusIndicatorSettings({ className }: { className?: string }
                 <Input
                   className="h-8 w-14 px-1 text-center font-mono text-xs"
                   inputMode="numeric"
-                  value={String(percentile)}
-                  onChange={(e) => {
-                    const n = Number.parseInt(e.target.value, 10)
-                    if (!Number.isNaN(n)) setPercentile(n)
-                  }}
+                  {...pctlDraft.inputProps}
                 />
               </label>
             </TooltipTrigger>
@@ -161,24 +147,20 @@ export function ConsensusIndicatorSettings({ className }: { className?: string }
             </TooltipContent>
           </Tooltip>
         ) : null}
-        {mode === 'sign' ? (
+        {mode === 'agreement' ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <label className="flex items-center gap-1.5 text-sm">
-                <span className="text-muted-foreground whitespace-nowrap">Min Δ</span>
+                <span className="text-muted-foreground whitespace-nowrap">Min each</span>
                 <Input
                   className="h-8 w-16 px-1 text-center font-mono text-xs"
                   inputMode="numeric"
-                  value={String(signMinNormDiff)}
-                  onChange={(e) => {
-                    const n = Number.parseInt(e.target.value, 10)
-                    if (!Number.isNaN(n)) setSignMinNormDiff(n)
-                  }}
+                  {...agreeDraft.inputProps}
                 />
               </label>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-xs text-xs leading-snug">
-              {explainConsensusMinNormDiff(signMinNormDiff)}
+              {explainConsensusMinNormDiff(agreementMinEach)}
             </TooltipContent>
           </Tooltip>
         ) : null}

@@ -182,7 +182,6 @@ function LeagueOverviewPage() {
 
   const consensusPercentileSetting = useUiSettings((s) => s.consensusPercentile)
   const consensusThresholdMode = useUiSettings((s) => s.consensusThresholdMode)
-  const consensusRankMinGap = useUiSettings((s) => s.consensusRankMinGap)
   const consensusMinNormDiff = useUiSettings((s) => s.consensusMinNormDiff)
   const consensusCutoffLane = useMemo(
     () => computeMinAbsDeltaPercentileCutoff(aggregated, metricLane, consensusPercentileSetting),
@@ -199,15 +198,13 @@ function LeagueOverviewPage() {
   const rosterSlotConsensus = useMemo(
     (): LeagueRosterSlotConsensusCtx => ({
       mode: consensusThresholdMode,
-      rankMinGap: consensusRankMinGap,
       percentile: consensusPercentileSetting,
-      signMinNormDiff: consensusMinNormDiff,
+      agreementMinEach: consensusMinNormDiff,
       dynPercentileCutoff: dynConsensusCutoff,
       rdPercentileCutoff: rdConsensusCutoff,
     }),
     [
       consensusThresholdMode,
-      consensusRankMinGap,
       consensusPercentileSetting,
       consensusMinNormDiff,
       dynConsensusCutoff,
@@ -838,7 +835,6 @@ function LeagueOverviewPage() {
                               <ConsensusFlag
                                 className="ml-1.5"
                                 lane={metricLane}
-                                player={bySleeperId.get(slot.slotId)}
                                 minAbsDeltaPercentileCutoff={consensusCutoffLane}
                                 deltaFc={slot.deltaFc}
                                 deltaDd={slot.deltaDd}

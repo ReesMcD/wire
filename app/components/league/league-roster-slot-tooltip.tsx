@@ -5,9 +5,8 @@ import { ConsensusIndicatorLine } from '@/components/league/consensus-flag'
 
 export interface LeagueRosterSlotConsensusCtx {
   mode: ConsensusThresholdMode
-  rankMinGap: number
   percentile: number
-  signMinNormDiff: number
+  agreementMinEach: number
   dynPercentileCutoff: number | null
   rdPercentileCutoff: number | null
 }
@@ -24,31 +23,25 @@ export function LeagueRosterSlotTooltipBody({
       <div className="space-y-2">
         <ActiveLaneNormTooltip player={player} lane="dynasty" />
         <ConsensusIndicatorLine
-          lane="dynasty"
           laneLabel="Dynasty"
-          player={player}
           deltaFc={player.dynDeltaNormFcVsKtc}
           deltaDd={player.dynDeltaNormDdVsKtc}
           minAbsDeltaPercentileCutoff={consensus.dynPercentileCutoff}
           mode={consensus.mode}
-          rankMinGap={consensus.rankMinGap}
           percentile={consensus.percentile}
-          signMinNormDiff={consensus.signMinNormDiff}
+          agreementMinEach={consensus.agreementMinEach}
         />
       </div>
       <div className="space-y-2 border-t border-border pt-2">
         <ActiveLaneNormTooltip player={player} lane="redraft" />
         <ConsensusIndicatorLine
-          lane="redraft"
           laneLabel="Redraft"
-          player={player}
           deltaFc={player.rdDeltaNormFcVsKtc}
           deltaDd={player.rdDeltaNormDdVsKtc}
           minAbsDeltaPercentileCutoff={consensus.rdPercentileCutoff}
           mode={consensus.mode}
-          rankMinGap={consensus.rankMinGap}
           percentile={consensus.percentile}
-          signMinNormDiff={consensus.signMinNormDiff}
+          agreementMinEach={consensus.agreementMinEach}
         />
       </div>
     </div>

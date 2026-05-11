@@ -163,47 +163,42 @@ export function explainDepthWeights(): string {
 
 /** One-line hint for tooltips on mode buttons (Popover / modal friendly). */
 export function explainConsensusModeTooltip(mode: ConsensusThresholdMode): string {
-  if (mode === 'rank') {
-    return 'Rank gap: FC+DD same direction vs KTC on norms, and both rank vs KTC by at least your min gap.'
-  }
   if (mode === 'percentile') {
-    return 'Percentile: FC+DD same direction vs KTC, and min(|Δ FC|,|Δ DD|) above a pool-derived cutoff.'
+    return 'Percentile: FC and DD agree with each other vs KTC (same direction), and the smaller of the two disagreements clears a cutoff learned from your whole player pool.'
   }
-  return 'Sign: FC+DD both above or both below KTC on normalized deltas; optional min size on min(|Δ|).'
+  if (mode === 'agreement') {
+    return 'Agreement: FC and DD agree with each other vs KTC (same direction), and each disagreement must be at least your minimum size (on the 0–9999 norm scale).'
+  }
+  return mode satisfies never ? '' : ''
 }
 
 export function explainConsensusThresholdMode(mode: ConsensusThresholdMode): string {
-  if (mode === 'rank') {
-    return [
-      'Rank gap: uses overall ranks (#1 = best). FantasyCalc and Dynasty Daddy must both rank the player at least N spots away from KTC on the same side, matching norm deltas (FC−KTC and DD−KTC both positive or both negative).',
-      'Useful when you care about overall list position, not only raw norm distance.',
-    ].join(' ')
-  }
   if (mode === 'percentile') {
     return [
-      'Percentile: over non-pick players with both deltas, take min(|Δ FC|,|Δ DD|) per player and set a cutoff at your chosen percentile of that distribution.',
-      'The icon needs same sign vs KTC and joint magnitude at least that cutoff (or sign-only if the sample is too small).',
+      'Looks at every non-pick player who has both a FantasyCalc and a Daddy Data delta vs KTC.',
+      'We take the smaller of the two deltas for each player, line those values up from smallest to largest, and draw a line at the percentile you pick. The icon only lights up when FC and DD are on the same side of KTC and that “smaller disagreement” is above the line (unless the pool is too small—then we only require same direction).',
     ].join(' ')
   }
-  return [
-    'Sign: FC and DD normalized deltas vs KTC are both positive (both sources higher than KTC) or both negative (both lower).',
-    'Optional minimum on min(|Δ FC|,|Δ DD|) filters out tiny disagreements; set to 0 to allow any same-sign non-zero pair.',
-  ].join(' ')
+  if (mode === 'agreement') {
+    return [
+      'FC and DD must point the same way vs KTC (both think he is higher than KTC, or both lower).',
+      'Then each source’s gap vs KTC must be at least your minimum number. Example: 100 means both FantasyCalc and Daddy Data disagree with KTC by at least 100 norm points, not just one of them.',
+      'Set the minimum to 0 to allow any non-zero same-direction pair.',
+    ].join(' ')
+  }
+  return mode satisfies never ? '' : ''
 }
 
 export function explainConsensusMinNormDiff(n: number): string {
   return [
-    `Minimum joint norm distance (current: ${n}). We require min(|Δ FC|,|Δ DD|) ≥ ${n} after FC and DD agree in sign vs KTC.`,
-    '0 = show the icon whenever both deltas are non-zero and on the same side. Raise to require a stronger shared move vs KTC.',
+    `Minimum size on each source (current: ${n}). After FC and DD agree in direction vs KTC, we require BOTH |FantasyCalc − KTC| and |Daddy Data − KTC| to be at least ${n} on the normalized scale.`,
+    '0 = only the direction has to match; raise the number to ignore tiny disagreements and show the icon only when both sources disagree with KTC by a meaningful amount.',
   ].join(' ')
 }
 
+/** @deprecated Rank mode removed; kept for type compatibility only. */
 export function explainConsensusRankMinGap(gap: number): string {
-  return [
-    `Minimum rank separation (current: ${gap}). We require min(|FC rank − KTC rank|, |DD rank − KTC rank|) ≥ ${gap}, with both gaps on the same side of zero and matching the norm-delta direction.`,
-    'Example: gap 20 means the “weaker” of the two sources still disagrees with KTC by at least 20 overall-rank spots.',
-    'Raise this to show fewer icons (stronger agreement only); lower for more hits.',
-  ].join(' ')
+  return `Legacy setting (unused). Previous “rank gap” value was ${gap}. Use Agreement or Percentile modes instead.`
 }
 
 export function explainConsensusPercentile(pct: number): string {
@@ -216,37 +211,79 @@ export function explainConsensusPercentile(pct: number): string {
 
 export function explainConsensusIconSummary(ctx: {
   mode: ConsensusThresholdMode
-  rankMinGap: number
   percentile: number
   percentileCutoff: number | null
   laneLabel: string
-  signMinNormDiff: number
+  agreementMinEach: number
 }): string {
-  const rankGate = `Rank: min gap ≥ ${ctx.rankMinGap}, ranks aligned with norm deltas (${ctx.laneLabel}).`
   const pctGate =
     ctx.percentileCutoff != null
-      ? `Percentile: min(|Δ FC|,|Δ DD|) ≥ ${Math.round(ctx.percentileCutoff)} (${ctx.percentile}th pctl, ${ctx.laneLabel}).`
-      : `Percentile: small sample — sign-only gate (${ctx.percentile}th target, ${ctx.laneLabel}).`
-  const signGate =
-    ctx.signMinNormDiff > 0
-      ? `Sign: same direction vs KTC, min(|Δ FC|,|Δ DD|) ≥ ${ctx.signMinNormDiff} (${ctx.laneLabel}).`
-      : `Sign: same direction vs KTC on norms, any non-zero pair (${ctx.laneLabel}).`
+      ? `Percentile: smaller of the two deltas vs KTC ≥ ${Math.round(ctx.percentileCutoff)} (${ctx.percentile}th percentile of the pool, ${ctx.laneLabel}).`
+      : `Percentile: small sample — same-direction only (${ctx.percentile}th target, ${ctx.laneLabel}).`
+  const agrGate =
+    ctx.agreementMinEach > 0
+      ? `Agreement: same direction vs KTC, and BOTH |FC−KTC| and |DD−KTC| ≥ ${ctx.agreementMinEach} (${ctx.laneLabel}).`
+      : `Agreement: same direction vs KTC on norms, any non-zero pair (${ctx.laneLabel}).`
 
-  if (ctx.mode === 'rank') {
-    return rankGate
-  }
   if (ctx.mode === 'percentile') {
     return pctGate
   }
-  return signGate
+  return agrGate
 }
 
 /** Help text for the FC+DD vs KTC control cluster (Settings + inline). */
 export function explainConsensusModesOverview(): string {
   return [
-    'Rank gap: same-direction norm deltas vs KTC plus rank-distance rules (min gap between FC/DD ranks and KTC).',
-    'Percentile: same-direction deltas plus a pool-based cutoff on min(|Δ FC|,|Δ DD|) from your percentile setting.',
-    'Sign: same-direction only (both positive or both negative vs KTC on normalized deltas), with an optional floor on min(|Δ FC|,|Δ DD|).',
-    'Persisted values also appear on Settings.',
+    'Percentile: FC and Daddy Data agree with each other vs KTC in direction, and how far they disagree is compared to the rest of your synced players (adaptive cutoff).',
+    'Agreement: same direction rule, plus a fixed minimum size that each source’s disagreement with KTC must meet.',
+    'These settings are saved and apply anywhere the green/red arrow icon appears (rankings, league cards, roster tooltips, waivers).',
   ].join(' ')
+}
+
+export function explainSettingsRankingsLeagueIntro(): string {
+  return 'Your Sleeper league ID ties the app to one league’s rosters. We use it to highlight who is on which roster in Rankings, to refresh roster data, and as the default when you open Rankings from Settings.'
+}
+
+export function explainSettingsNormalizationIntro(): string {
+  return 'Before comparing FantasyCalc, KTC, and Daddy Data, every raw value is stretched onto a common 0–9999 scale. “Max” pins the top player at 9999; “Quantile” lines sources up so typical stars land in a similar band. Change this when you want rankings to feel more “spread out” or more compressed.'
+}
+
+export function explainSettingsConsensusIntro(): string {
+  return 'The small arrow next to a player means FantasyCalc and Daddy Data both disagree with KTC in the same direction (both think he is more expensive than KTC, or both cheaper). The mode decides how strong that disagreement must be before we show the icon.'
+}
+
+export function explainSettingsLeaguePowerIntro(): string {
+  return 'These options change how team strength badges are computed and labeled on the league overview. They do not change player-level ranks inside the big spreadsheet unless you also change tiers on the league page.'
+}
+
+export function explainSettingsRankingsColumnsIntro(): string {
+  return 'Controls the wide Rankings table only: which source columns are visible per lane, whether draft picks appear as rows, and whether player similarity lists on the player page can suggest picks.'
+}
+
+export function explainSettingsLaneSourceToggles(): string {
+  return 'Each KTC / FC / DD / Avg button shows or hides that whole column block for the dynasty or redraft half of the Rankings spreadsheet. Hiding a source does not remove it from power math elsewhere—only from this table.'
+}
+
+export function explainSettingsHidePickRows(): string {
+  return 'When on, draft picks disappear from Rankings rows and from team roster tables that respect this flag. Player values and pick values still sync; they are just hidden in those lists.'
+}
+
+export function explainSettingsSimilarityIncludePicks(): string {
+  return 'When on, the “similar players” style lists on a player’s page can include draft picks as neighbors. Turn off if you only want real players in those suggestions.'
+}
+
+export function explainSettingsSaveOpenRankings(): string {
+  return 'Writes this league ID to saved settings and jumps to Rankings with it in the URL so highlights match that league.'
+}
+
+export function explainSettingsClearLeague(): string {
+  return 'Clears the saved league ID and opens Rankings without a league filter.'
+}
+
+export function explainSettingsRefreshRosters(): string {
+  return 'Fetches the latest Sleeper rosters for the saved league ID and refreshes cached data used across the app.'
+}
+
+export function explainSettingsDepthWeightsRow(): string {
+  return 'Only used in “Depth-weighted” power mode. Each number is a multiplier for starters, backups, and bench before their avg-norms are summed. Starters default to 1; lowering backups/bench makes depth matter less in the headline power number.'
 }

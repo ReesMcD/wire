@@ -165,7 +165,6 @@ function WaiverPage() {
             )}
             <ConsensusFlag
               lane={metricLane}
-              player={row.original}
               minAbsDeltaPercentileCutoff={consensusCutoffLane}
               deltaFc={row.original.deltaFc}
               deltaDd={row.original.deltaDd}
