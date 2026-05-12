@@ -1,21 +1,13 @@
 import type { VisibilityState } from '@tanstack/react-table'
+import {
+  RANKINGS_GROUP_COLUMN_IDS,
+  type RankingsGroupColumnId,
+} from './rankings-group-column-ids'
 
 /** localStorage key — shared by Rankings and Team roster tables. */
 export const RANKINGS_COLUMN_VISIBILITY_STORAGE_KEY = 'rankings-column-visibility'
 
-export const RANKINGS_GROUP_COLUMN_IDS = [
-  'dynasty_avg',
-  'dynasty_ktc',
-  'dynasty_dd',
-  'dynasty_fc',
-  'redraft_avg',
-  'redraft_ktc',
-  'redraft_dd',
-  'redraft_fc',
-  'dynasty_redraft_diff',
-] as const
-
-export type RankingsGroupColumnId = (typeof RANKINGS_GROUP_COLUMN_IDS)[number]
+export { RANKINGS_GROUP_COLUMN_IDS, type RankingsGroupColumnId }
 
 /** Leaf column ids for TanStack visibility (raw value columns). */
 export const RANKINGS_RAW_LEAF_IDS = [

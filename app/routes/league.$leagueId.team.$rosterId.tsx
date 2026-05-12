@@ -32,9 +32,9 @@ import type { TableMetricLane } from '@/lib/rankings/norm-source-tooltip'
 import {
   mergeRankingsTableColumnVisibility,
   readRankingsGroupVisibilityFromStorage,
-  RANKINGS_GROUP_COLUMN_IDS,
   writeRankingsGroupVisibilityToStorage,
 } from '@/lib/rankings/rankings-column-visibility'
+import { RANKINGS_GROUP_COLUMN_IDS } from '@/lib/rankings/rankings-group-column-ids'
 import { wideSpreadsheetDataColumnGroups } from '@/lib/rankings/wide-spreadsheet-data-columns'
 import { PositionMultiFilter } from '@/components/rankings/position-multi-filter'
 import { passesPositionMultiFilter } from '@/lib/rankings/position-multi-filter'
