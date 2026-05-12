@@ -9,12 +9,14 @@
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "sync": "tsx scripts/sync.ts",
+    "migrate": "tsx scripts/migrate.ts",
     "test": "tsx --test \"app/lib/sources/dynasty-daddy/*.test.ts\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.100.9",

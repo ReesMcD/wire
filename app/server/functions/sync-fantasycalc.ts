@@ -21,7 +21,7 @@ export const syncFantasyCalc = createServerFn({ method: 'GET' })
 
     const players = await readPlayersFromDisk()
     if (players.length === 0) {
-      throw new Error('No players on disk. Sync Sleeper players first.')
+      throw new Error('No players in database. Sync Sleeper players first.')
     }
 
     const baseOpts = {

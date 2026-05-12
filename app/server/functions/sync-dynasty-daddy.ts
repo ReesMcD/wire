@@ -13,7 +13,7 @@ export const syncDynastyDaddy = createServerFn({ method: 'GET' }).handler(
 
     const players = await readPlayersFromDisk()
     if (players.length === 0) {
-      throw new Error('No players on disk. Sync Sleeper players first.')
+      throw new Error('No players in database. Sync Sleeper players first.')
     }
 
     const rawDynasty = await provider.fetch({ rankingMode: 'dynasty' })

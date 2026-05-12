@@ -1,28 +1,108 @@
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
-import { mkdir, writeFile, readFile } from 'fs/promises'
-import { existsSync } from 'fs'
+/**
+ * CLI sync script – fetches data from all sources and writes to Neon Postgres.
+ *
+ * Usage:
+ *   DATABASE_URL=postgres://... pnpm sync
+ *
+ * ─── SECRETS REQUIRED ───
+ * DATABASE_URL — your Neon pooled connection string
+ * ────────────────────────
+ */
+import { neon } from '@neondatabase/serverless'
+import type { SleeperPlayer, PlayerValue, SyncMetadata } from '../app/lib/db/schema'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'data')
-
-async function ensureDir(dir: string) {
-  if (!existsSync(dir)) await mkdir(dir, { recursive: true })
+const DATABASE_URL = process.env.DATABASE_URL
+if (!DATABASE_URL) {
+  console.error('ERROR: DATABASE_URL environment variable is not set.')
+  console.error('Set it to your Neon connection string before running sync.')
+  process.exit(1)
 }
 
-async function writeJson(relativePath: string, data: unknown) {
-  const fullPath = resolve(DATA_DIR, relativePath)
-  await ensureDir(dirname(fullPath))
-  await writeFile(fullPath, JSON.stringify(data, null, 2))
-  console.log(`  Written: ${relativePath}`)
+const sql = neon(DATABASE_URL)
+
+function esc(val: string): string {
+  return `'${val.replace(/'/g, "''")}'`
+}
+function escNull(val: string | null): string {
+  return val === null ? 'NULL' : esc(val)
+}
+function escNum(val: number | null | undefined): string {
+  return val === null || val === undefined ? 'NULL' : String(val)
 }
 
-async function readJson<T>(relativePath: string): Promise<T | null> {
-  const fullPath = resolve(DATA_DIR, relativePath)
-  if (!existsSync(fullPath)) return null
-  const raw = await readFile(fullPath, 'utf-8')
-  return JSON.parse(raw) as T
+async function upsertPlayers(players: SleeperPlayer[]) {
+  const BATCH_SIZE = 500
+  for (let i = 0; i < players.length; i += BATCH_SIZE) {
+    const batch = players.slice(i, i + BATCH_SIZE)
+    const values = batch
+      .map(
+        (p) =>
+          `(${esc(p.playerId)}, ${esc(p.firstName)}, ${esc(p.lastName)}, ${escNull(p.team)}, ${escNull(p.position)}, ${escNum(p.age)}, ${escNum(p.yearsExp)}, ${esc(p.searchFullName)}, ${escNull(p.status)})`,
+      )
+      .join(',\n')
+
+    await sql.query(`
+      INSERT INTO players (player_id, first_name, last_name, team, position, age, years_exp, search_full_name, status)
+      VALUES ${values}
+      ON CONFLICT (player_id) DO UPDATE SET
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        team = EXCLUDED.team,
+        position = EXCLUDED.position,
+        age = EXCLUDED.age,
+        years_exp = EXCLUDED.years_exp,
+        search_full_name = EXCLUDED.search_full_name,
+        status = EXCLUDED.status
+    `)
+  }
+}
+
+async function writeAllValues(values: PlayerValue[]) {
+  await sql`TRUNCATE player_values`
+  const BATCH_SIZE = 500
+
+  for (let i = 0; i < values.length; i += BATCH_SIZE) {
+    const batch = values.slice(i, i + BATCH_SIZE)
+    const rows = batch
+      .map(
+        (v) =>
+          `(${esc(v.id)}, ${esc(v.sleeperId)}, ${esc(v.sourceId)}, ${v.value}, ${v.normalizedValue}, ${escNum(v.normalizedValueQm)}, ${escNum(v.overallRank)}, ${escNum(v.positionRank)}, ${escNum(v.trend)}, ${escNum(v.tierAvg)}, ${escNum(v.tierFc)}, ${escNum(v.tierKtc)}, ${escNum(v.tierDd)}, ${esc(v.updatedAt)})`,
+      )
+      .join(',\n')
+
+    await sql.query(`
+      INSERT INTO player_values (id, sleeper_id, source_id, value, normalized_value, normalized_value_qm, overall_rank, position_rank, trend, tier_avg, tier_fc, tier_ktc, tier_dd, updated_at)
+      VALUES ${rows}
+      ON CONFLICT (id) DO UPDATE SET
+        sleeper_id = EXCLUDED.sleeper_id,
+        source_id = EXCLUDED.source_id,
+        value = EXCLUDED.value,
+        normalized_value = EXCLUDED.normalized_value,
+        normalized_value_qm = EXCLUDED.normalized_value_qm,
+        overall_rank = EXCLUDED.overall_rank,
+        position_rank = EXCLUDED.position_rank,
+        trend = EXCLUDED.trend,
+        tier_avg = EXCLUDED.tier_avg,
+        tier_fc = EXCLUDED.tier_fc,
+        tier_ktc = EXCLUDED.tier_ktc,
+        tier_dd = EXCLUDED.tier_dd,
+        updated_at = EXCLUDED.updated_at
+    `)
+  }
+}
+
+async function writeSyncMetadata(metadata: Record<string, SyncMetadata>) {
+  for (const [sourceId, meta] of Object.entries(metadata)) {
+    await sql`
+      INSERT INTO sync_metadata (source_id, last_synced_at, status, error, record_count)
+      VALUES (${sourceId}, ${meta.lastSyncedAt}, ${meta.status}, ${meta.error}, ${meta.recordCount})
+      ON CONFLICT (source_id) DO UPDATE SET
+        last_synced_at = EXCLUDED.last_synced_at,
+        status = EXCLUDED.status,
+        error = EXCLUDED.error,
+        record_count = EXCLUDED.record_count
+    `
+  }
 }
 
 async function syncSleeperPlayers() {
@@ -32,7 +112,7 @@ async function syncSleeperPlayers() {
 
   type SleeperApiPlayer = { player_id: string; first_name: string; last_name: string; team: string | null; position: string | null; age: number | null; years_exp: number | null; search_full_name: string; status: string | null; sport: string }
 
-  const players = Object.values(raw as Record<string, SleeperApiPlayer>)
+  const players: SleeperPlayer[] = Object.values(raw as Record<string, SleeperApiPlayer>)
     .filter((p) => p.sport === 'nfl' || p.position !== null)
     .map((p) => ({
       playerId: p.player_id,
@@ -46,12 +126,12 @@ async function syncSleeperPlayers() {
       status: p.status,
     }))
 
-  await writeJson('players.json', players)
-  console.log(`[Sleeper] Saved ${players.length} players`)
+  await upsertPlayers(players)
+  console.log(`[Sleeper] Saved ${players.length} players to Neon`)
   return players
 }
 
-async function syncFantasyCalcBoth(players: any[]) {
+async function syncFantasyCalcBoth(players: SleeperPlayer[]) {
   console.log('\n[FantasyCalc] Fetching dynasty + redraft...')
   const { FantasyCalcProvider } = await import('../app/lib/sources/fantasycalc/provider.js')
   const { resolveValues } = await import('../app/lib/sync/resolve-values.js')
@@ -75,7 +155,7 @@ async function syncFantasyCalcBoth(players: any[]) {
   }
 }
 
-async function syncKtcBoth(players: any[]) {
+async function syncKtcBoth(players: SleeperPlayer[]) {
   console.log('\n[KTC] Scraping dynasty + redraft...')
   const { KtcProvider } = await import('../app/lib/sources/ktc/provider.js')
   const { resolveValues } = await import('../app/lib/sync/resolve-values.js')
@@ -104,7 +184,7 @@ async function syncKtcBoth(players: any[]) {
   }
 }
 
-async function syncDynastyDaddyBoth(players: any[]) {
+async function syncDynastyDaddyBoth(players: SleeperPlayer[]) {
   console.log('\n[Dynasty Daddy] CSV dynasty + ADP/redraft...')
   const { DynastyDaddyProvider } = await import('../app/lib/sources/dynasty-daddy/provider.js')
   const { resolveValues } = await import('../app/lib/sync/resolve-values.js')
@@ -134,8 +214,7 @@ async function syncDynastyDaddyBoth(players: any[]) {
 
 async function main() {
   console.log('=== Fantasy Sync Script ===')
-  console.log(`Data directory: ${DATA_DIR}`)
-  await ensureDir(DATA_DIR)
+  console.log('[Sync] Writing to Neon Postgres')
 
   const players = await syncSleeperPlayers()
 
@@ -161,10 +240,8 @@ async function main() {
   const { assignTierDimensions } = await import('../app/lib/sync/tiering.js')
   const mergedResolved = [...fcResult.resolved, ...ktcResult.resolved, ...ddResult.resolved]
   const allResolved = assignTierDimensions(applyQuantileMatchedNorms(mergedResolved))
-  const allUnresolved = [...fcResult.unresolved, ...ktcResult.unresolved, ...ddResult.unresolved]
 
-  await writeJson('values.json', allResolved)
-  await writeJson('unresolved.json', allUnresolved)
+  await writeAllValues(allResolved)
 
   const {
     SOURCE_FC_DYNASTY,
@@ -175,7 +252,7 @@ async function main() {
     SOURCE_DD_REDRAFT,
   } = await import('../app/lib/sync/tiering.js')
 
-  const metadata: Record<string, any> = {
+  const metadata: Record<string, SyncMetadata> = {
     sleeper_players: {
       lastSyncedAt: new Date().toISOString(),
       sourceId: 'sleeper_players',
@@ -227,12 +304,11 @@ async function main() {
     },
   }
 
-  await writeJson('sync-metadata.json', metadata)
+  await writeSyncMetadata(metadata)
 
   console.log('\n=== Sync Complete ===')
   console.log(`  Players: ${players.length}`)
   console.log(`  Values:  ${allResolved.length}`)
-  console.log(`  Unresolved: ${allUnresolved.length}`)
 }
 
 main().catch((e) => {

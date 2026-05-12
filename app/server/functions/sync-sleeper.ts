@@ -81,7 +81,7 @@ export const syncSleeperPlayers = createServerFn({ method: 'GET' }).handler(
         status: p.status,
       }))
 
-    console.log(`[Sleeper] Fetched ${players.length} players, writing to disk...`)
+    console.log(`[Sleeper] Fetched ${players.length} players, writing to database...`)
     await writePlayers(players)
     await updateSyncMetadata('sleeper_players', {
       lastSyncedAt: new Date().toISOString(),
