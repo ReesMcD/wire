@@ -169,8 +169,8 @@ const DEFAULTS: Omit<
   playerFiltersCollapsed: false,
   rankingsDefaultLeagueId: '',
   leagueOverviewDisplayNormSource: 'avg',
-  rankingsHideRawValueColumns: false,
-  rankingsHideSourceTierColumns: false,
+  rankingsHideRawValueColumns: true,
+  rankingsHideSourceTierColumns: true,
 }
 
 const LEGACY_KEYS = {
@@ -401,7 +401,7 @@ export const useUiSettings = create<UiSettingsState>()(
     }),
     {
       name: 'fantasy-ui-settings',
-      version: 8,
+      version: 9,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       migrate: (persisted, fromVersion) => {
@@ -462,9 +462,9 @@ export const useUiSettings = create<UiSettingsState>()(
           else if (m !== 'percentile' && m !== 'agreement') merged.consensusThresholdMode = 'agreement'
         }
 
-        if (v < 8) {
-          merged.rankingsHideRawValueColumns = merged.rankingsHideRawValueColumns ?? false
-          merged.rankingsHideSourceTierColumns = merged.rankingsHideSourceTierColumns ?? false
+        if (v < 9) {
+          merged.rankingsHideRawValueColumns = true
+          merged.rankingsHideSourceTierColumns = true
         }
 
         const partial = migratePersistedToV3(merged)

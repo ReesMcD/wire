@@ -2,14 +2,21 @@
  * CLI sync script – fetches data from all sources and writes to Neon Postgres.
  *
  * Usage:
- *   DATABASE_URL=postgres://... pnpm sync
+ *   pnpm sync
+ *
+ * Loads `.env.local` from the repo root when `DATABASE_URL` is not already set.
+ * You can still override with `DATABASE_URL=... pnpm sync`.
  *
  * ─── SECRETS REQUIRED ───
- * DATABASE_URL — your Neon pooled connection string
+ * DATABASE_URL — your Neon pooled connection string (in `.env.local` or env)
  * ────────────────────────
  */
 import { neon } from '@neondatabase/serverless'
 import type { SleeperPlayer, PlayerValue, SyncMetadata } from '../app/lib/db/schema'
+import { dedupePlayerValuesById } from '../app/lib/sync/resolve-values'
+import { loadEnvLocalFromCwd } from './load-env-local'
+
+loadEnvLocalFromCwd()
 
 const DATABASE_URL = process.env.DATABASE_URL
 if (!DATABASE_URL) {
@@ -20,11 +27,11 @@ if (!DATABASE_URL) {
 
 const sql = neon(DATABASE_URL)
 
-function esc(val: string): string {
-  return `'${val.replace(/'/g, "''")}'`
+function esc(val: string | null | undefined): string {
+  return `'${String(val ?? '').replace(/'/g, "''")}'`
 }
-function escNull(val: string | null): string {
-  return val === null ? 'NULL' : esc(val)
+function escNull(val: string | null | undefined): string {
+  return val == null ? 'NULL' : esc(val)
 }
 function escNum(val: number | null | undefined): string {
   return val === null || val === undefined ? 'NULL' : String(val)
@@ -58,11 +65,18 @@ async function upsertPlayers(players: SleeperPlayer[]) {
 }
 
 async function writeAllValues(values: PlayerValue[]) {
+  const unique = dedupePlayerValuesById(values)
+  if (unique.length < values.length) {
+    console.warn(
+      `[Sync] Deduplicated player_values before insert: ${values.length} -> ${unique.length} rows (duplicate ids)`,
+    )
+  }
+
   await sql`TRUNCATE player_values`
   const BATCH_SIZE = 500
 
-  for (let i = 0; i < values.length; i += BATCH_SIZE) {
-    const batch = values.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+    const batch = unique.slice(i, i + BATCH_SIZE)
     const rows = batch
       .map(
         (v) =>
@@ -110,21 +124,40 @@ async function syncSleeperPlayers() {
   const { fetchAllPlayers } = await import('../app/lib/sources/sleeper/client.js')
   const raw = await fetchAllPlayers()
 
-  type SleeperApiPlayer = { player_id: string; first_name: string; last_name: string; team: string | null; position: string | null; age: number | null; years_exp: number | null; search_full_name: string; status: string | null; sport: string }
+  type SleeperApiPlayer = {
+    player_id?: string
+    first_name?: string | null
+    last_name?: string | null
+    team?: string | null
+    position?: string | null
+    age?: number | null
+    years_exp?: number | null
+    search_full_name?: string | null
+    status?: string | null
+    sport?: string
+  }
 
   const players: SleeperPlayer[] = Object.values(raw as Record<string, SleeperApiPlayer>)
-    .filter((p) => p.sport === 'nfl' || p.position !== null)
-    .map((p) => ({
-      playerId: p.player_id,
-      firstName: p.first_name,
-      lastName: p.last_name,
-      team: p.team,
-      position: p.position,
-      age: p.age,
-      yearsExp: p.years_exp,
-      searchFullName: p.search_full_name,
-      status: p.status,
-    }))
+    .filter((p) => Boolean(p.player_id?.trim()))
+    .filter((p) => p.sport === 'nfl' || p.position != null)
+    .map((p) => {
+      const playerId = p.player_id!.trim()
+      const first = p.first_name ?? ''
+      const last = p.last_name ?? ''
+      const search =
+        (p.search_full_name?.trim() || `${first} ${last}`.trim()) || playerId
+      return {
+        playerId,
+        firstName: first,
+        lastName: last,
+        team: p.team ?? null,
+        position: p.position ?? null,
+        age: p.age ?? null,
+        yearsExp: p.years_exp ?? null,
+        searchFullName: search,
+        status: p.status ?? null,
+      }
+    })
 
   await upsertPlayers(players)
   console.log(`[Sleeper] Saved ${players.length} players to Neon`)

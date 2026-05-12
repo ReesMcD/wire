@@ -119,20 +119,9 @@
   @apply bg-muted/35;
 }
 
-.spreadsheet-table tbody tr:nth-child(even) > td.spreadsheet-sticky-name {
-  @apply bg-muted/15;
-}
-
-.spreadsheet-table tbody tr:nth-child(odd) > td.spreadsheet-sticky-name {
-  @apply bg-background;
-}
-
-.spreadsheet-table tbody tr:hover > td.spreadsheet-sticky-name {
-  @apply bg-muted/40;
-}
-
+/* Sticky Player column: one solid fill (no zebra); opaque so horizontal scroll does not show through */
 .spreadsheet-table .spreadsheet-sticky-name {
-  @apply sticky left-0 z-20 bg-clip-padding shadow-[2px_0_4px_-2px_oklch(0_0_0/0.12)];
+  @apply sticky left-0 z-20 bg-background bg-clip-padding shadow-[2px_0_4px_-2px_oklch(0_0_0/0.12)];
 }
 
 .dark .spreadsheet-table .spreadsheet-sticky-name {

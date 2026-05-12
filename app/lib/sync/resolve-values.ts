@@ -7,6 +7,29 @@ export interface ResolveResult {
   unresolved: UnresolvedPlayer[]
 }
 
+/** Prefer better list position (lower overallRank), then higher raw value, then first row. */
+function pickBetterPlayerValue(a: PlayerValue, b: PlayerValue): PlayerValue {
+  const rankA = a.overallRank ?? Number.POSITIVE_INFINITY
+  const rankB = b.overallRank ?? Number.POSITIVE_INFINITY
+  if (rankA !== rankB) return rankA < rankB ? a : b
+  if (a.value !== b.value) return a.value > b.value ? a : b
+  return a
+}
+
+/** Collapse duplicate `id` (same sleeper + source) from upstream CSV / matcher collisions. */
+export function dedupePlayerValuesById(rows: PlayerValue[]): PlayerValue[] {
+  const map = new Map<string, PlayerValue>()
+  for (const row of rows) {
+    const existing = map.get(row.id)
+    if (!existing) {
+      map.set(row.id, row)
+      continue
+    }
+    map.set(row.id, pickBetterPlayerValue(existing, row))
+  }
+  return [...map.values()]
+}
+
 export function resolveValues(
   sourceId: string,
   values: NormalizedPlayerValue[],
@@ -77,12 +100,14 @@ export function resolveValues(
     }
   }
 
-  const maxValue = resolved.reduce((max, v) => Math.max(max, v.value), 0)
+  const dedupedResolved = dedupePlayerValuesById(resolved)
+
+  const maxValue = dedupedResolved.reduce((max, v) => Math.max(max, v.value), 0)
   if (maxValue > 0) {
-    for (const r of resolved) {
+    for (const r of dedupedResolved) {
       r.normalizedValue = Math.round((r.value / maxValue) * 9999)
     }
   }
 
-  return { resolved, unresolved }
+  return { resolved: dedupedResolved, unresolved }
 }

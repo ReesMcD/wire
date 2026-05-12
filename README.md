@@ -19,18 +19,21 @@ pnpm install
 
 ### 2. Set up the database
 
-Create a Neon project at [neon.tech](https://neon.tech) and copy the pooled connection string.
+Create a Neon project at [neon.tech](https://neon.tech) and copy the **pooled** connection string.
 
 ```bash
 cp .env.example .env.local
-# Edit .env.local and set DATABASE_URL to your Neon connection string
 ```
+
+In `.env.local`, search for **`REPLACE_ME_NEON_`** and replace the placeholder with your full Neon URL (starts with `postgres://`).
 
 Run the migration to create tables:
 
 ```bash
-DATABASE_URL=postgres://... pnpm migrate
+pnpm migrate
 ```
+
+If you prefer not to use `.env.local`, set `DATABASE_URL` in the shell or prefix the command.
 
 ### 3. Install Playwright browsers (optional, for KTC/DD scraping)
 
@@ -44,14 +47,14 @@ npx playwright install chromium
 pnpm dev
 ```
 
-The app will be available at **http://localhost:3000**.
+The app will be available at **http://localhost:3000**. With `.env.local` present, **Vite loads it for `pnpm dev`**, so server functions and the UI receive **`DATABASE_URL`** without exporting it in the shell.
 
 ### 5. Seed initial data
 
 Run the full sync to populate your database:
 
 ```bash
-DATABASE_URL=postgres://... pnpm sync
+pnpm sync
 ```
 
 Or use the UI:
@@ -87,9 +90,15 @@ https://sleeper.com/leagues/123456789012345678
 | `DATABASE_URL` | Yes | Neon Postgres pooled connection string |
 
 Set in:
+
 - **Vercel**: Project Settings → Environment Variables (Production + Preview + Development)
-- **Local**: `.env.local` at repo root
+- **Local**: `.env.local` at repo root (copy from `.env.example`, replace `REPLACE_ME_NEON_DATABASE_URL`)
 - **CI**: Pipeline secrets
+
+**Local behavior:**
+
+- **`pnpm dev`** — Vite loads `.env.local`, so **`DATABASE_URL`** is available to TanStack Start server functions and the app.
+- **`pnpm migrate`** / **`pnpm sync`** — These scripts load **`.env.local`** from the repo root when **`DATABASE_URL`** is not already set in the environment. You can still override with `export DATABASE_URL=...` or `DATABASE_URL='...' pnpm migrate`.
 
 ## Features
 
@@ -174,12 +183,16 @@ All player data is keyed by **Sleeper player ID** as the canonical identifier.
 
 The app deploys to Vercel via the Nitro adapter. Configuration is in `vercel.json` and `vite.config.ts`.
 
-Required Vercel setup:
-1. Add `DATABASE_URL` to Project Settings → Environment Variables
-2. Deploy (Vercel auto-detects the build command from `vercel.json`)
-3. Run initial sync: `DATABASE_URL=postgres://... pnpm sync`
+### Vercel checklist
 
-The scheduled sync task (`tasks/sync.ts`) runs daily at 05:00 UTC via Nitro's task scheduler.
+1. In **Neon**, create a project and copy the **pooled** connection string (host often includes `-pooler`).
+2. In **Vercel** → your project → **Settings** → **Environment Variables**, add **`DATABASE_URL`** with that string.
+3. Enable it for **Production** and **Preview** (and **Development** if you use Vercel’s dev integration).
+4. **Redeploy** (or push a commit) so serverless functions and Nitro pick up the new variable.
+5. **First-time database**: from your machine, run **`pnpm migrate`** against the same URL (see [Getting Started](#2-set-up-the-database)), then **Sync** in the app or **`pnpm sync`**.
+6. **Scheduled sync**: `tasks/sync.ts` runs daily at **05:00 UTC**; it uses **`getDb()`** and needs **`DATABASE_URL`** in the Vercel project environment (same as the app).
+
+Optional: use a separate Neon branch for Preview vs Production if you want isolated preview databases.
 
 ## License
 
