@@ -32,8 +32,15 @@ function formatDiff(d: number | null, r: number | null) {
   return t
 }
 
-export function ActiveLaneNormTooltip({ player, lane }: { player: AggregatedPlayer; lane: TableMetricLane }) {
-  const n = normsForLane(player, lane)
+/** Cross-lane comparison (values are normalized scale throughout this UI). */
+export function DynRdNormalizedNormDiff({
+  player,
+  compact = false,
+}: {
+  player: AggregatedPlayer
+  /** When true, omit the section heading (e.g. league slot tooltip — grid headers suffice). */
+  compact?: boolean
+}) {
   const dk = player.dynKtcNorm
   const rk = player.rdKtcNorm
   const df = player.dynFcNorm
@@ -43,9 +50,54 @@ export function ActiveLaneNormTooltip({ player, lane }: { player: AggregatedPlay
   const da = player.dynAvgNorm
   const ra = player.rdAvgNorm
   return (
+    <div className="space-y-1 border-t border-border pt-2 text-xs">
+      {!compact ? <p className="font-medium text-foreground">Dyn − Rd</p> : null}
+      <dl className="grid grid-cols-[auto_1fr_1fr_1fr] gap-x-2 gap-y-1 text-[11px]">
+        <dt />
+        <dd className="text-center text-muted-foreground">Dyn</dd>
+        <dd className="text-center text-muted-foreground">Rd</dd>
+        <dd className="text-center text-muted-foreground">Δ</dd>
+        <dt className="text-muted-foreground">KTC</dt>
+        <dd className="text-right tabular-nums">{formatNorm(dk)}</dd>
+        <dd className="text-right tabular-nums">{formatNorm(rk)}</dd>
+        <dd className="text-right tabular-nums">{formatDiff(dk, rk)}</dd>
+        <dt className="text-muted-foreground">FC</dt>
+        <dd className="text-right tabular-nums">{formatNorm(df)}</dd>
+        <dd className="text-right tabular-nums">{formatNorm(rf)}</dd>
+        <dd className="text-right tabular-nums">{formatDiff(df, rf)}</dd>
+        <dt className="text-muted-foreground">DD</dt>
+        <dd className="text-right tabular-nums">{formatNorm(dd)}</dd>
+        <dd className="text-right tabular-nums">{formatNorm(rd)}</dd>
+        <dd className="text-right tabular-nums">{formatDiff(dd, rd)}</dd>
+        <dt className="text-muted-foreground">Avg</dt>
+        <dd className="text-right tabular-nums">{formatNorm(da)}</dd>
+        <dd className="text-right tabular-nums">{formatNorm(ra)}</dd>
+        <dd className="text-right tabular-nums">{formatDiff(da, ra)}</dd>
+      </dl>
+    </div>
+  )
+}
+
+export function ActiveLaneNormTooltip({
+  player,
+  lane,
+  showDynRdDiff = true,
+  compact = false,
+}: {
+  player: AggregatedPlayer
+  lane: TableMetricLane
+  /** When false, omit the shared Dyn − Rd block (e.g. league slot tooltip renders it once below both lanes). */
+  showDynRdDiff?: boolean
+  /** When true, omit the lane heading — context is always normalized values here. */
+  compact?: boolean
+}) {
+  const n = normsForLane(player, lane)
+  return (
     <div className="space-y-2 text-xs">
       <div className="space-y-1.5">
-        <p className="font-medium text-foreground">{lane === 'dynasty' ? 'Dynasty' : 'Redraft'} norms</p>
+        {!compact ? (
+          <p className="font-medium text-foreground">{lane === 'dynasty' ? 'Dynasty' : 'Redraft'} norms</p>
+        ) : null}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">KTC</dt>
           <dd className="text-right tabular-nums">{formatNorm(n.ktc)}</dd>
@@ -57,31 +109,7 @@ export function ActiveLaneNormTooltip({ player, lane }: { player: AggregatedPlay
           <dd className="text-right tabular-nums">{formatNorm(n.avg)}</dd>
         </dl>
       </div>
-      <div className="space-y-1 border-t border-border pt-2">
-        <p className="font-medium text-foreground">Dyn − Rd (normalized)</p>
-        <dl className="grid grid-cols-[auto_1fr_1fr_1fr] gap-x-2 gap-y-1 text-[11px]">
-          <dt />
-          <dd className="text-center text-muted-foreground">Dyn</dd>
-          <dd className="text-center text-muted-foreground">Rd</dd>
-          <dd className="text-center text-muted-foreground">Δ</dd>
-          <dt className="text-muted-foreground">KTC</dt>
-          <dd className="text-right tabular-nums">{formatNorm(dk)}</dd>
-          <dd className="text-right tabular-nums">{formatNorm(rk)}</dd>
-          <dd className="text-right tabular-nums">{formatDiff(dk, rk)}</dd>
-          <dt className="text-muted-foreground">FC</dt>
-          <dd className="text-right tabular-nums">{formatNorm(df)}</dd>
-          <dd className="text-right tabular-nums">{formatNorm(rf)}</dd>
-          <dd className="text-right tabular-nums">{formatDiff(df, rf)}</dd>
-          <dt className="text-muted-foreground">DD</dt>
-          <dd className="text-right tabular-nums">{formatNorm(dd)}</dd>
-          <dd className="text-right tabular-nums">{formatNorm(rd)}</dd>
-          <dd className="text-right tabular-nums">{formatDiff(dd, rd)}</dd>
-          <dt className="text-muted-foreground">Avg</dt>
-          <dd className="text-right tabular-nums">{formatNorm(da)}</dd>
-          <dd className="text-right tabular-nums">{formatNorm(ra)}</dd>
-          <dd className="text-right tabular-nums">{formatDiff(da, ra)}</dd>
-        </dl>
-      </div>
+      {showDynRdDiff ? <DynRdNormalizedNormDiff player={player} compact={compact} /> : null}
     </div>
   )
 }

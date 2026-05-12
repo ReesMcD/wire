@@ -134,12 +134,15 @@ function RosterSlotNormCell({
   consensus: LeagueRosterSlotConsensusCtx
 }) {
   const inner = (
-    <span className="text-muted-foreground inline-flex shrink-0 flex-col items-end gap-0.5 tabular-nums text-xs">
-      <span className="inline-flex items-baseline gap-1">
+    <span className="text-muted-foreground inline-flex shrink-0 items-baseline gap-x-1.5 tabular-nums text-xs">
+      <span className="inline-flex items-baseline gap-0.5">
         <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/90">Dyn</span>
         <span>{displayNormDyn != null ? displayNormDyn.toLocaleString() : '—'}</span>
       </span>
-      <span className="inline-flex items-baseline gap-1">
+      <span className="text-muted-foreground/60" aria-hidden>
+        /
+      </span>
+      <span className="inline-flex items-baseline gap-0.5">
         <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground/90">Rd</span>
         <span>{displayNormRd != null ? displayNormRd.toLocaleString() : '—'}</span>
       </span>

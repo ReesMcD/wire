@@ -1,6 +1,6 @@
 import type { AggregatedPlayer } from '@/lib/rankings/player-metrics'
 import type { ConsensusThresholdMode } from '@/lib/rankings/consensus-threshold'
-import { ActiveLaneNormTooltip } from '@/lib/rankings/norm-source-tooltip'
+import { ActiveLaneNormTooltip, DynRdNormalizedNormDiff } from '@/lib/rankings/norm-source-tooltip'
 import { ConsensusIndicatorLine } from '@/components/league/consensus-flag'
 
 export interface LeagueRosterSlotConsensusCtx {
@@ -24,9 +24,9 @@ export function LeagueRosterSlotTooltipBody({
     <div className="max-w-sm space-y-3 text-xs">
       <p className="font-medium leading-snug text-foreground">{slotLabel}</p>
       <div className="space-y-2">
-        <ActiveLaneNormTooltip player={player} lane="dynasty" />
+        <ActiveLaneNormTooltip player={player} lane="dynasty" showDynRdDiff={false} compact />
         <ConsensusIndicatorLine
-          laneLabel="Dynasty"
+          laneLabel="Dyn"
           deltaFc={player.dynDeltaNormFcVsKtc}
           deltaDd={player.dynDeltaNormDdVsKtc}
           minAbsDeltaPercentileCutoff={consensus.dynPercentileCutoff}
@@ -36,9 +36,9 @@ export function LeagueRosterSlotTooltipBody({
         />
       </div>
       <div className="space-y-2 border-t border-border pt-2">
-        <ActiveLaneNormTooltip player={player} lane="redraft" />
+        <ActiveLaneNormTooltip player={player} lane="redraft" showDynRdDiff={false} compact />
         <ConsensusIndicatorLine
-          laneLabel="Redraft"
+          laneLabel="Rd"
           deltaFc={player.rdDeltaNormFcVsKtc}
           deltaDd={player.rdDeltaNormDdVsKtc}
           minAbsDeltaPercentileCutoff={consensus.rdPercentileCutoff}
@@ -47,6 +47,7 @@ export function LeagueRosterSlotTooltipBody({
           agreementMinEach={consensus.agreementMinEach}
         />
       </div>
+      <DynRdNormalizedNormDiff player={player} compact />
     </div>
   )
 }
