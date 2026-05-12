@@ -24,6 +24,7 @@ export default defineConfig({
         tasks: true,
       },
       scheduledTasks: {
+        // Daily 05:00 UTC — Vercel cron hits `/_vercel/cron` (see README / Vercel Cron Jobs after deploy).
         '0 5 * * *': ['sync'],
       },
       vercel: {
@@ -31,6 +32,10 @@ export default defineConfig({
           maxDuration: 300,
         },
         functionRules: {
+          // Cron handler runs full sync in-process; must allow long timeout (Playwright sources).
+          '/_vercel/cron': {
+            maxDuration: 300,
+          },
           '/_nitro/tasks/sync': {
             maxDuration: 300,
           },

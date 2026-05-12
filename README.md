@@ -190,7 +190,21 @@ The app deploys to Vercel via the Nitro adapter. Configuration is in `vercel.jso
 3. Enable it for **Production** and **Preview** (and **Development** if you use Vercel’s dev integration).
 4. **Redeploy** (or push a commit) so serverless functions and Nitro pick up the new variable.
 5. **First-time database**: from your machine, run **`pnpm migrate`** against the same URL (see [Getting Started](#2-set-up-the-database)), then **Sync** in the app or **`pnpm sync`**.
-6. **Scheduled sync**: `tasks/sync.ts` runs daily at **05:00 UTC**; it uses **`getDb()`** and needs **`DATABASE_URL`** in the Vercel project environment (same as the app).
+
+### Daily scheduled sync (cron)
+
+Nitro runs the same full sync as **`pnpm sync`** via [`tasks/sync.ts`](tasks/sync.ts). On Vercel, a **cron job** calls Nitro’s handler at **`/_vercel/cron`** once per day (**`0 5 * * *`** UTC — see `scheduledTasks` in [`vite.config.ts`](vite.config.ts)). That schedule is written into **`.vercel/output/config.json`** at build time when Vercel builds the project (do **not** duplicate it in root `vercel.json` unless you know you need to; two identical crons can double-invoke).
+
+**What you do in Vercel**
+
+1. **Production deploy** — Push or deploy so a **Production** build completes. Preview-only deploys do not drive production crons.
+2. **`DATABASE_URL`** — Under **Settings → Environment Variables**, set your Neon pooled URL for **Production** (required). Cron invocations hit the production deployment only.
+3. **Optional `CRON_SECRET`** — Add a long random value (16+ characters) for **Production**. Vercel sends it as `Authorization: Bearer <secret>` on cron requests; the handler rejects missing or wrong values when this env var is set.
+4. **Confirm the cron** — **Settings → [Cron Jobs](https://vercel.com/docs/cron-jobs/manage-cron-jobs#viewing-cron-jobs)**. You should see one job: path **`/_vercel/cron`**, schedule **`0 5 * * *`**. If it is missing, trigger a fresh **Production** redeploy from the same repo (the Nitro+Vercel build must run on Vercel’s builders so `VERCEL` is set).
+5. **Hobby plan** — Daily crons are allowed; Vercel may run yours **any time within the 05:00–05:59 UTC window** (not necessarily 05:00 sharp). See [Cron jobs accuracy](https://vercel.com/docs/cron-jobs/manage-cron-jobs#cron-jobs-accuracy).
+6. **Timeouts** — The project sets **`maxDuration` 300s** for the serverless bundle and **`/_vercel/cron`** so Playwright-backed sources can finish.
+7. **Verify a run** — After the first scheduled time (or use **Runtime Logs** with path `/_vercel/cron`), look for **`=== Fantasy Sync Task ===`** / **`=== Sync Task Complete ===`** or errors. Cron does not auto-retry on failure.
+8. **Manual refresh** — Use the in-app **Sync** page anytime; you cannot fully simulate Vercel’s cron locally with `vercel dev` ([limitations](https://vercel.com/docs/cron-jobs/manage-cron-jobs#running-cron-jobs-locally)).
 
 Optional: use a separate Neon branch for Preview vs Production if you want isolated preview databases.
 
